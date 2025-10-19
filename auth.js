@@ -143,18 +143,22 @@ export async function setupAuth(client) {
           ephemeral: true,
         });
 
-        const now = new Date();
-const koreaTime = new Date(now.getTime() + 9 * 60 * 60 * 1000); // UTC +9
+// ✅ 한국 시간 계산 (UTC +9)
+const now = new Date();
+const koreaTime = new Date(now.getTime() + 9 * 60 * 60 * 1000);
 
+// ✅ 인증 완료 임베드 (공백 포함)
 const embed = new EmbedBuilder()
   .setTitle("인증이 완료되었습니다.")
   .setDescription(
-    `<@${userId}>님, **${userData.robloxName}** 계정으로 연동이 완료되었습니다.\n\n\u200B`
+    `<@${userId}>님, **${(userData?.robloxName || existing?.robloxName)}** 계정으로 연동이 완료되었습니다.\n\n\u200B`
   )
   .setColor(0x00a67e)
   .setFooter({
-    text: `뎀넴의여유봇 • ${koreaTime
-      .toLocaleTimeString("ko-KR", { hour: "2-digit", minute: "2-digit" })}`,
+    text: `뎀넴의여유봇 • ${koreaTime.toLocaleTimeString("ko-KR", {
+      hour: "2-digit",
+      minute: "2-digit",
+    })}`,
   });
 
 
@@ -317,5 +321,6 @@ const embed = new EmbedBuilder()
     }
   });
 }
+
 
 
