@@ -146,7 +146,7 @@ export async function setupAuth(client) {
         const embed = new EmbedBuilder()
           .setTitle("인증이 완료되었습니다.")
           .setDescription(
-            `<@${userId}>님, **${existing.robloxName}** 계정으로 연동이 완료되었습니다.\n\n`
+            `<@${userId}>님, **${existing.robloxName}** 계정으로 연동이 완료되었습니다.\n\n\u200B`
           )
           .setColor(0x00a67e)
           .setFooter({
@@ -315,3 +315,4 @@ export async function setupAuth(client) {
     }
   });
 }
+
