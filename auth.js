@@ -37,7 +37,7 @@ export async function setupAuth(client) {
     try {
       // 1️⃣ /인증하기 명령어 처리
       if (interaction.isCommand() && interaction.commandName === "인증하기") {
-        // ✅ 채널 제한 확인
+        // ✅ 채널 제한
         if (interaction.channelId !== AUTH_CHANNEL_ID) {
           return interaction.reply({
             content: "⚠️ 지정된 채널에서만 이용할 수 있습니다.",
@@ -50,7 +50,7 @@ export async function setupAuth(client) {
         const data = JSON.parse(fs.readFileSync(DATA_FILE, "utf8"));
         const existing = data[interaction.user.id];
 
-        // ⚠️ 이미 인증된 계정일 때 (Embed)
+        // ⚠️ 이미 인증된 계정일 때
         if (hasVerifiedRole && existing) {
           const embed = new EmbedBuilder()
             .setTitle("⚠️ 이미 인증된 계정이 있습니다.")
@@ -66,20 +66,10 @@ export async function setupAuth(client) {
               .setStyle(ButtonStyle.Secondary)
           );
 
-          return interaction.reply({
-            ephemeral: true,
-            embeds: [embed],
-            components: [row],
-          });
+          return interaction.reply({ ephemeral: true, embeds: [embed], components: [row] });
         }
 
-        if (hasVerifiedRole && !existing) {
-          return interaction.reply({
-            content: "⚠️ 이미 인증이 완료된 사용자입니다.",
-            ephemeral: true,
-          });
-        }
-
+        // ✅ 기존 데이터 존재 시 (역할 없음)
         if (!hasVerifiedRole && existing && existing.verified) {
           const row = new ActionRowBuilder().addComponents(
             new ButtonBuilder()
@@ -99,7 +89,7 @@ export async function setupAuth(client) {
           });
         }
 
-        // 인증 시작
+        // ✅ 인증 시작
         const embed = new EmbedBuilder()
           .setTitle("Roblox 계정과 연동하기")
           .setDescription("아래 버튼을 눌러 로블록스 계정을 연동하세요.")
@@ -114,7 +104,7 @@ export async function setupAuth(client) {
         await interaction.reply({ embeds: [embed], components: [row], ephemeral: true });
       }
 
-      // 🔄 다른 계정으로 새 인증
+      // 🔁 기존 인증 삭제
       if (interaction.isButton() && interaction.customId.startsWith("newauth_")) {
         const userId = interaction.customId.replace("newauth_", "");
         const data = JSON.parse(fs.readFileSync(DATA_FILE, "utf8"));
@@ -139,28 +129,27 @@ export async function setupAuth(client) {
         await member.roles.add(VERIFIED_ROLE_ID).catch(() => {});
 
         await interaction.reply({
-          content: `Roblox 계정 **${existing.robloxName}** 와의 연동이 다시 완료되었습니다.`,
+          content: `🎉 Roblox 계정 **${existing.robloxName}** 와의 연동이 다시 완료되었습니다.`,
           ephemeral: true,
         });
 
-// ✅ 한국 시간 계산 (UTC +9)
-const now = new Date();
-const koreaTime = new Date(now.getTime() + 9 * 60 * 60 * 1000);
+        // ✅ 한국 시간 (UTC +9)
+        const now = new Date();
+        const koreaTime = new Date(now.getTime() + 9 * 60 * 60 * 1000);
 
-// ✅ 인증 완료 임베드 (공백 포함)
-const embed = new EmbedBuilder()
-  .setTitle("인증이 완료되었습니다.")
-  .setDescription(
-    `<@${userId}>님, **${(userData?.robloxName || existing?.robloxName)}** 계정으로 연동이 완료되었습니다.\n\n\u200B`
-  )
-  .setColor(0x00a67e)
-  .setFooter({
-    text: `뎀넴의여유봇 • ${koreaTime.toLocaleTimeString("ko-KR", {
-      hour: "2-digit",
-      minute: "2-digit",
-    })}`,
-  });
-
+        const embed = new EmbedBuilder()
+          .setTitle("인증이 완료되었습니다.")
+          .setDescription(
+            `<@${userId}>님, **${existing.robloxName}** 계정으로 연동이 완료되었습니다.\n\n\u200B`
+          )
+          .setColor(0x00a67e)
+          .setFooter({
+            text: `뎀넴의여유봇 • ${koreaTime.toLocaleTimeString("ko-KR", {
+              hour: "2-digit",
+              minute: "2-digit",
+              hour12: true,
+            })}`,
+          });
 
         const channel = await client.channels.fetch(interaction.channelId);
         await channel.send({ embeds: [embed] });
@@ -198,7 +187,6 @@ const embed = new EmbedBuilder()
         let robloxName = null;
 
         try {
-          // ✅ 유연한 검색 (대소문자 무시 + 표시이름 지원)
           const search = await fetch(
             `https://users.roblox.com/v1/users/search?keyword=${encodeURIComponent(username)}&limit=10`
           );
@@ -215,7 +203,6 @@ const embed = new EmbedBuilder()
             robloxName = user.name;
           }
 
-          // POST 방식 보조 검색
           if (!robloxId) {
             const res2 = await fetch("https://users.roblox.com/v1/usernames/users", {
               method: "POST",
@@ -223,7 +210,6 @@ const embed = new EmbedBuilder()
               body: JSON.stringify({ usernames: [username] }),
             });
             const data2 = await res2.json();
-
             if (data2.data && data2.data.length > 0) {
               robloxId = data2.data[0].id;
               robloxName = data2.data[0].name;
@@ -231,21 +217,15 @@ const embed = new EmbedBuilder()
           }
 
           if (!robloxId) {
-            return interaction.editReply("해당 닉네임 또는 아이디를 가진 Roblox 계정을 찾을 수 없습니다.");
+            return interaction.editReply("⚠️ 해당 닉네임 또는 아이디를 가진 Roblox 계정을 찾을 수 없습니다.");
           }
         } catch (err) {
           console.error("Roblox API Error:", err);
           return interaction.editReply("⚠️ Roblox API 오류가 발생했습니다.");
         }
 
-        // ✅ 데이터 저장
         const data = JSON.parse(fs.readFileSync(DATA_FILE, "utf8"));
-        data[interaction.user.id] = {
-          robloxId,
-          robloxName,
-          verifyCode,
-          verified: false,
-        };
+        data[interaction.user.id] = { robloxId, robloxName, verifyCode, verified: false };
         fs.writeFileSync(DATA_FILE, JSON.stringify(data, null, 2));
 
         const verifyButton = new ButtonBuilder()
@@ -256,12 +236,12 @@ const embed = new EmbedBuilder()
         const row = new ActionRowBuilder().addComponents(verifyButton);
 
         await interaction.editReply({
-          content: `Roblox 계정 **${robloxName}** 을(를) 찾았습니다.\n\n아래 코드를 Roblox 상태 메시지에 입력해주세요:\n\`\`\`${verifyCode}\`\`\`\n\n프로필 소개에 코드를 넣은 뒤 아래 **연동하기** 버튼을 누르세요.`,
+          content: `✅ Roblox 계정 **${robloxName}** 을(를) 찾았습니다!\n\n아래 코드를 Roblox 상태 메시지에 입력하세요:\n\`\`\`${verifyCode}\`\`\`\n\n입력 후 아래 **연동하기** 버튼을 눌러 인증을 완료하세요.`,
           components: [row],
         });
       }
 
-      // 🔗 연동 버튼 클릭 시
+      // 🔗 연동 버튼 클릭
       if (interaction.isButton() && interaction.customId.startsWith("verify_")) {
         const userId = interaction.customId.replace("verify_", "");
         const data = JSON.parse(fs.readFileSync(DATA_FILE, "utf8"));
@@ -284,20 +264,25 @@ const embed = new EmbedBuilder()
           await member.roles.add(VERIFIED_ROLE_ID).catch(() => {});
 
           await interaction.reply({
-            content: `Roblox 계정 **${userData.robloxName}** 인증 완료`,
+            content: `✅ Roblox 계정 **${userData.robloxName}** 인증 완료!`,
             ephemeral: true,
           });
+
+          // ✅ 한국 시간 (UTC +9)
+          const now = new Date();
+          const koreaTime = new Date(now.getTime() + 9 * 60 * 60 * 1000);
 
           const embed = new EmbedBuilder()
             .setTitle("인증이 완료되었습니다.")
             .setDescription(
-              `<@${userId}>님, **${userData.robloxName}** 계정으로 연동이 완료되었습니다.\n\n`
+              `<@${userId}>님, **${userData.robloxName}** 계정으로 연동이 완료되었습니다.\n\n\u200B`
             )
             .setColor(0x00a67e)
             .setFooter({
-              text: `뎀넴의여유봇 • ${new Date().toLocaleTimeString("ko-KR", {
+              text: `뎀넴의여유봇 • ${koreaTime.toLocaleTimeString("ko-KR", {
                 hour: "2-digit",
                 minute: "2-digit",
+                hour12: true,
               })}`,
             });
 
@@ -305,7 +290,7 @@ const embed = new EmbedBuilder()
           await channel.send({ embeds: [embed] });
         } else {
           await interaction.reply({
-            content: "인증 코드가 Roblox 상태 메시지에 없습니다.",
+            content: "⚠️ 인증 코드가 Roblox 상태 메시지에 없습니다.",
             ephemeral: true,
           });
         }
@@ -321,6 +306,3 @@ const embed = new EmbedBuilder()
     }
   });
 }
-
-
-
