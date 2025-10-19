@@ -9,7 +9,9 @@ const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
 // ✅ HTTP Keep-Alive 서버 설정 (Render용)
 const app = express();
 app.get("/", (req, res) => res.send("✅ Bot is alive!"));
-// app.listen(3000, () => console.log("🌐 Keep-Alive server running on port 3000"));
+app.listen(process.env.PORT || 3000, () => 
+  console.log("🌐 Keep-Alive server running on port 3000")
+);
 setInterval(() => console.log("💤 Bot keep-alive"), 60_000);
 
 
@@ -90,4 +92,5 @@ client.login(DISCORD_TOKEN);
 
 import { setupAuth } from "./auth.js";
 setupAuth(client);
+
 
