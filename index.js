@@ -302,7 +302,7 @@ client.on("messageCreate", async (message) => {
       "<:Warning:1429715991591387146> 답변을 생성할 수 없습니다.";
 
     const embed = new EmbedBuilder()
-      .setColor("#00a67e")
+      .setColor("#e6d4a8")
       .setAuthor({
         name: message.author.username,
         iconURL: message.author.displayAvatarURL(),
@@ -319,4 +319,5 @@ client.on("messageCreate", async (message) => {
 
 // ✅ 로그인
 client.login(DISCORD_TOKEN);
+
 
