@@ -5,7 +5,10 @@ import {
   GatewayIntentBits,
   Partials,
   EmbedBuilder,
-  ActivityType,
+  ActionRowBuilder,
+  ButtonBuilder,
+  ButtonStyle,
+  PermissionsBitField,
 } from "discord.js";
 import fetch from "node-fetch";
 import { setupAuth } from "./auth.js";
@@ -13,12 +16,19 @@ import { setupAuth } from "./auth.js";
 // ✅ 환경 변수 확인
 const DISCORD_TOKEN = process.env.DISCORD_TOKEN;
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
-const ADMIN_ID = "1410269476011770059"; // 관리자
-const GUILD_ID = "1410625687580180582"; // 메인 서버 ID
+const LOG_CHANNEL_ID = "1412633302862397513"; // 관리자 보고 채널
 
 if (!DISCORD_TOKEN || !GEMINI_API_KEY) {
   console.error("❌ .env 파일에 DISCORD_TOKEN 또는 GEMINI_API_KEY 가 없습니다.");
   process.exit(1);
+}
+
+// ✅ 한국 시간 함수
+function getKSTTime() {
+  const now = new Date();
+  const utc = now.getTime() + now.getTimezoneOffset() * 60000;
+  const kst = new Date(utc + 9 * 60 * 60 * 1000);
+  return kst.toLocaleTimeString("ko-KR", { hour: "2-digit", minute: "2-digit" });
 }
 
 // ✅ HTTP Keep-Alive 서버 (Render용)
@@ -47,123 +57,36 @@ client.once("ready", () => {
   setupAuth(client);
 });
 
-// ✅ 메시지 이벤트 (AI 응답)
+
+// ✅ Gemini AI 채팅 (DM 포함)
 client.on("messageCreate", async (message) => {
   try {
-    // 🔒 봇 자신은 무시
     if (message.author.bot) return;
-
-    // 🔒 @everyone / @here 멘션 무시
     if (message.mentions.everyone) return;
 
-    // ✅ 관리자 명령어 (DM 전용)
-    if (!message.guild && message.author.id === ADMIN_ID) {
-      const content = message.content.trim();
+    const isDM = message.channel.type === 1;
+    const mentioned =
+      message.mentions.has(client.user) ||
+      (isDM && message.content.trim().length > 0);
+    if (!mentioned) return;
 
-      // 🎮 ?play (내용)
-      if (content.startsWith("?play ")) {
-        const newStatus = content.slice(6).trim();
-        if (!newStatus) return;
-
-        await client.user.setPresence({
-          activities: [{ name: newStatus, type: ActivityType.Playing }],
-          status: "online",
-        });
-
-        const replyMsg = await message.channel.send(
-          `상태 메시지를 \`${newStatus}\` 으로 변경했어요!`
-        );
-        setTimeout(() => replyMsg.delete().catch(() => {}), 5000);
-        return;
-      }
-
-      // 🧾 ?유저ID 또는 !유저ID
-      if (content.startsWith("?") || content.startsWith("!")) {
-        const userId = content.slice(1).trim();
-        if (!/^\d+$/.test(userId)) return;
-
-        const guild = await client.guilds.fetch(GUILD_ID).catch(() => null);
-        if (!guild) return;
-
-        const member = await guild.members.fetch(userId).catch(() => null);
-        if (!member) {
-          const replyMsg = await message.channel.send(
-            "<:Warning:1429715991591387146> 해당 사용자를 서버에서 찾을 수 없습니다."
-          );
-          setTimeout(() => replyMsg.delete().catch(() => {}), 5000);
-          return;
-        }
-
-        // ✅ 역할 이름 매핑
-        const roleMap = {
-          "1422944460219748362": "대한민국 대통령실",
-          "1422945355925819413": "국가정보원",
-          "1422942818938388510": "대한민국 감사원",
-          "1422945857275166741": "대한민국 대법원",
-          "1422946396100890745": "대통령실 경호처",
-          "1422947629645430804": "대한민국 외교부",
-          "1422945989215522817": "대한민국 행정법원",
-          "1422948537293078528": "한미연합합",
-        };
-
-        let roleName = "없음";
-        for (const [id, name] of Object.entries(roleMap)) {
-          if (member.roles.cache.has(id)) {
-            roleName = name.split("ㅣ")[0];
-            break;
-          }
-        }
-
-        // ✅ 닉네임에서 직책 추출 ([감사원장] hiku → 감사원장)
-        let title = "없음";
-        if (member.nickname && member.nickname.includes("[")) {
-          const match = member.nickname.match(/\[(.*?)\]/);
-          if (match) title = match[1];
-        }
-
-        // ✅ 결과 임베드 생성
-        const embed = new EmbedBuilder()
-          .setColor("#5661EA")
-          .setTitle(`${member.displayName} 님의 정보`)
-          .setDescription(
-            `> **Discord:** ${member.user.tag}\n` +
-              `> **소속:** ${roleName}\n` +
-              `> **직책:** ${title}`
-          )
-          .setFooter({ text: "뎀넴의여유봇 • 한국시간 기준" });
-
-        await message.channel.send({ embeds: [embed] });
-        return;
-      }
-    }
-
-    // ✅ 봇 멘션 여부 확인 (AI 응답)
-    if (!message.mentions.has(client.user)) return;
-
-    // ✅ DM에서는 AI 응답하지 않음
-    if (message.channel.type === 1) return;
-
-    // 질문 내용 추출
     const question = message.content
       .replace(`<@${client.user.id}>`, "")
       .trim();
 
-    if (!question)
-      return message.channel.send("질문 내용도 함께 보내줘 :D");
+    if (!question) return;
 
-    // ✅ 1️⃣ “더 좋은 답변 생각중” 임시 메시지
     const thinkingMsg = await message.channel.send(
       "<a:Loading:1429705917267705937> 더 좋은 답변 생각중..."
     );
 
-    // ✅ 2️⃣ Gemini API 요청
     const url = `https://generativelanguage.googleapis.com/v1/models/gemini-2.5-flash:generateContent?key=${GEMINI_API_KEY}`;
     const body = {
       contents: [
         {
           parts: [
             {
-              text: `너는 나의 친한 친구야\n항상 따뜻하고 자연스러운 한국어로 이야기하듯 대화해줘. 이모티콘 사용은 자제해줘.\n\n내가 물어볼게:\n${question}`,
+              text: `너는 나의 친한 친구야. 항상 따뜻하고 자연스러운 한국어로 이야기하듯 대화해줘.\n\n내가 물어볼게: ${question}`,
             },
           ],
         },
@@ -175,7 +98,6 @@ client.on("messageCreate", async (message) => {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(body),
     });
-
     const data = await res.json();
 
     if (!res.ok) {
@@ -189,7 +111,6 @@ client.on("messageCreate", async (message) => {
       data.candidates?.[0]?.content?.parts?.[0]?.text ||
       "<:Warning:1429715991591387146> 답변을 생성할 수 없습니다.";
 
-    // ✅ 3️⃣ 결과 임베드 생성
     const embed = new EmbedBuilder()
       .setAuthor({
         name: message.author.username,
@@ -197,35 +118,195 @@ client.on("messageCreate", async (message) => {
       })
       .setTitle("뎀넴의여유봇의 답변")
       .setDescription(answer)
-      .setColor("#dbc593")
-      .setTimestamp();
-
-    // ✅ 4️⃣ 기존 메시지를 임베드로 수정 (캐시 오류 방지)
-    await thinkingMsg
-      .edit({ content: "", embeds: [embed] })
-      .catch(async () => {
-        await message.channel.send({ embeds: [embed] });
+      .setColor(0x00a67e)
+      .setFooter({
+        text: `뎀넴의여유봇 • ${getKSTTime()}`,
       });
+
+    await thinkingMsg.edit({ content: "", embeds: [embed] }).catch(async () => {
+      await message.channel.send({ embeds: [embed] });
+    });
   } catch (err) {
     console.error("❌ 오류:", err);
-    try {
-      const errorEmbed = new EmbedBuilder()
-        .setColor("#ffc443")
-        .setTitle("<:Warning:1429715991591387146> 오류가 발생했어요.")
+  }
+});
+
+
+// ====== 도배 감지 (50초 기준) ======
+const spamMap = new Map();
+
+client.on("messageCreate", async (message) => {
+  if (message.author.bot) return;
+  const content = message.content.trim();
+  const userId = message.author.id;
+
+  const record = spamMap.get(userId) || { lastMsg: "", count: 0, time: Date.now() };
+
+  if (
+    (content.length > 50 && Date.now() - record.time < 50000) ||
+    (record.lastMsg === content && Date.now() - record.time < 50000)
+  ) {
+    record.count++;
+  } else {
+    record.count = 1;
+  }
+
+  record.lastMsg = content;
+  record.time = Date.now();
+  spamMap.set(userId, record);
+
+  if (record.count >= 3) {
+    const member = await message.guild.members.fetch(userId).catch(() => null);
+    if (!member) return;
+
+    await member.timeout(60 * 60 * 1000, "도배 감지");
+    await message.channel.bulkDelete(10).catch(() => {});
+
+    const dmEmbed = new EmbedBuilder()
+      .setColor("#ed1c24")
+      .setTitle("<:Stop:1429877156040937634> 귀하는 격리되었습니다.")
+      .setDescription(
+        "귀하가 테러로 의심될 수 있는 활동을 하여 모든 권한을 삭제하였습니다.\n" +
+          "<:Follow:1429877154669396130> **사유** : 대량 텍스트 문구를 짧은 시간에 보내기를 여러 번 반복함\n" +
+          `<:Follow:1429877154669396130> **처벌대상** : ${message.author}`
+      )
+      .setFooter({
+        text: "위 행위는 올바르게 판단이 되지 않을 수 있습니다. 다만 피해가 있을 시 즉시 격리조치 합니다. `테러`는 멤버 대량추방, 텍스트 도배, 채널대량삭제, 채널대량생성, 역할 대량삭제, 역할대량생성 등을 의미합니다.",
+      });
+
+    await message.author.send({ embeds: [dmEmbed] }).catch(() => {});
+
+    const adminChannel = await client.channels.fetch(LOG_CHANNEL_ID);
+    const adminEmbed = new EmbedBuilder()
+      .setColor("#ed1c24")
+      .setTitle(`<:Stop:1429877156040937634> ${message.author.tag}를 격리조치하였습니다.`)
+      .setDescription(
+        "귀하가 테러로 의심될 수 있는 활동을 하여 모든 권한을 삭제하였습니다.\n" +
+          "<:Follow:1429877154669396130> **사유** : 대량 텍스트 문구를 짧은 시간에 보내기를 여러 번 반복함\n" +
+          `<:Follow:1429877154669396130> **처벌대상** : ${message.author}`
+      )
+      .setFooter({
+        text: `뎀넴의여유봇 • ${getKSTTime()}`,
+      });
+
+    const row = new ActionRowBuilder().addComponents(
+      new ButtonBuilder()
+        .setCustomId(`unmute_${message.author.id}`)
+        .setLabel("격리해제")
+        .setStyle(ButtonStyle.Danger)
+    );
+
+    await adminChannel.send({ embeds: [adminEmbed], components: [row] });
+  }
+});
+
+
+// ====== 대량 조치 감시 (5분 내 2회) ======
+const actionTracker = {};
+
+client.on("guildAuditLogEntryCreate", async (entry) => {
+  try {
+    const { action, executor } = entry;
+    if (!executor || executor.bot) return;
+
+    // ✅ Discord Action 코드 → 한글 사유
+    let actionType = "";
+    switch (action) {
+      case "MEMBER_UPDATE":
+        actionType = "대량 타임아웃";
+        break;
+      case "MEMBER_KICK":
+        actionType = "대량 추방";
+        break;
+      case "MEMBER_BAN_ADD":
+        actionType = "대량 차단";
+        break;
+      default:
+        return;
+    }
+
+    const guild = entry.guild;
+    const executorMember = await guild.members.fetch(executor.id).catch(() => null);
+    if (!executorMember) return;
+
+    if (
+      executorMember.permissions.has(PermissionsBitField.Flags.KickMembers) ||
+      executorMember.permissions.has(PermissionsBitField.Flags.BanMembers) ||
+      executorMember.permissions.has(PermissionsBitField.Flags.Administrator)
+    )
+      return;
+
+    const now = Date.now();
+    const userLog = actionTracker[executor.id] || [];
+    const recent = userLog.filter((t) => now - t < 300000);
+    recent.push(now);
+    actionTracker[executor.id] = recent;
+
+    if (recent.length >= 2) {
+      await executorMember.timeout(60 * 60 * 1000, `${actionType} 감지`);
+
+      const warnDM = new EmbedBuilder()
+        .setColor("#ed1c24")
+        .setTitle("<:Stop:1429877156040937634> 귀하는 격리되었습니다.")
         .setDescription(
-          "다시 시도해 주세요.\n\n> 오류 : **알 수 없는 오류**\n> 코드 : 50001\n> 조치 : `재시도`\n> **잠시 후 다시 이용해 주세요.**"
+          `귀하가 테러로 의심될 수 있는 활동(${actionType})을 하여 모든 권한을 삭제하였습니다.\n` +
+            `<:Follow:1429877154669396130> **사유** : ${actionType} 감지\n` +
+            `<:Follow:1429877154669396130> **처벌대상** : ${executor}`
         )
         .setFooter({
-          text: `뎀넴의여유봇 • ${new Date().toLocaleTimeString("ko-KR", {
-            hour: "2-digit",
-            minute: "2-digit",
-          })}`,
+          text: "위 행위는 올바르게 판단이 되지 않을 수 있습니다. 다만 피해가 있을 시 즉시 격리조치 합니다. `테러`는 멤버 대량추방, 텍스트 도배, 채널대량삭제, 채널대량생성, 역할 대량삭제, 역할대량생성 등을 의미합니다.",
         });
-      await message.channel.send({ embeds: [errorEmbed] });
-    } catch {}
+
+      await executor.send({ embeds: [warnDM] }).catch(() => {});
+
+      const alert = new EmbedBuilder()
+        .setColor("#ed1c24")
+        .setTitle(`<:Stop:1429877156040937634> ${executor.tag} 격리조치`)
+        .setDescription(
+          `<:Follow:1429877154669396130> **사유** : ${actionType} 감지\n<:Follow:1429877154669396130> **처벌대상** : ${executor}`
+        )
+        .setFooter({ text: `뎀넴의여유봇 • ${getKSTTime()}` });
+
+      const channel = await client.channels.fetch(LOG_CHANNEL_ID);
+      const row = new ActionRowBuilder().addComponents(
+        new ButtonBuilder()
+          .setCustomId(`unmute_${executor.id}`)
+          .setLabel("격리해제")
+          .setStyle(ButtonStyle.Danger)
+      );
+
+      await channel.send({ embeds: [alert], components: [row] });
+      actionTracker[executor.id] = [];
+    }
+  } catch (err) {
+    console.error("🚨 감사로그 감시 오류:", err);
+  }
+});
+
+
+// ====== 격리 해제 버튼 (서버 소유자만 가능) ======
+client.on("interactionCreate", async (i) => {
+  if (!i.isButton()) return;
+  if (!i.customId.startsWith("unmute_")) return;
+
+  const targetId = i.customId.split("_")[1];
+  const guild = i.guild;
+  if (i.user.id !== guild.ownerId) return;
+
+  const member = await guild.members.fetch(targetId).catch(() => {});
+  if (member) {
+    await member.timeout(null);
+    await i.reply({
+      content: `<:Info:1429877040949100654> ${member.user.tag}님의 격리가 해제되었습니다.`,
+      ephemeral: true,
+    });
+  } else {
+    await i.reply({
+      content: "<:Warning:1429715991591387146> 해당 사용자를 찾을 수 없습니다.",
+      ephemeral: true,
+    });
   }
 });
 
 // ✅ 로그인
 client.login(DISCORD_TOKEN);
-
