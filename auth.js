@@ -144,7 +144,8 @@ export async function setupAuth(client) {
           .setLabel("연동할 Roblox 계정을 입력해주세요.")
           .setStyle(TextInputStyle.Short)
           .setRequired(true);
-        modal.addComponents(new ActionRowBuilder().addComponents(input));
+        const actionRow = new ActionRowBuilder().addComponents(input);
+        modal.addComponents(actionRow);
         return interaction.showModal(modal);
       }
 
@@ -164,9 +165,7 @@ export async function setupAuth(client) {
         let robloxUser = null;
         try {
           const search = await fetch(
-            `https://users.roblox.com/v1/users/search?keyword=${encodeURIComponent(
-              username
-            )}&limit=1`
+            `https://users.roblox.com/v1/users/search?keyword=${encodeURIComponent(username)}&limit=1`
           );
           const data = await search.json();
           if (data.data?.length) robloxUser = data.data[0];
@@ -270,7 +269,9 @@ export async function setupAuth(client) {
           fs.writeFileSync(DATA_FILE, JSON.stringify(db, null, 2));
 
           const member = await interaction.guild.members.fetch(userId);
-          for (const r of VERIFIED_ROLES) await member.roles.add(r).catch(() => {});
+          for (const r of VERIFIED_ROLES) {
+            await member.roles.add(r).catch(() => {});
+          }
 
           const embedDone = new EmbedBuilder()
             .setColor("#5661EA")
@@ -356,6 +357,15 @@ export async function setupAuth(client) {
 
         return msg.channel.send({ embeds: [embed] });
       }
+
+      // … (다른 관리자 명령 처리 추가)
+    } catch (err) {
+      console.error("❌ 관리자 DM 오류:", err);
+    }
+  });
+
+}
+
 
 // ✅ ?ban
 if (command === "?ban") {
@@ -511,5 +521,3 @@ if (command === "?ban") {
       console.error("⚠️ 관리자 DM 명령 오류:", err);
     }
   });
-}
-
