@@ -87,8 +87,8 @@ function extractTopic(text) {
     친구: "친구와의 이야기",
     게임: "게임 이야기",
     홀더: "홀더의 사생활",
-    홀꼬: "홀더의 꼬꼬에 대하여",
-    홀더게이: "홀더의 성적취행에 관한",
+    홀꼬: "홀더의 꼬꼬에",
+    홀더게이: "홀더의 성적취행에 관해",
   };
   for (const [k, v] of Object.entries(topics)) if (text.includes(k)) return v;
   return "일상적인 대화";
@@ -319,3 +319,4 @@ client.on("messageCreate", async (message) => {
 
 // ✅ 로그인
 client.login(DISCORD_TOKEN);
+
