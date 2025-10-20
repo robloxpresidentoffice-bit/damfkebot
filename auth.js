@@ -9,6 +9,7 @@ import {
   SlashCommandBuilder,
   Routes,
   REST,
+  PermissionsBitField,
 } from "discord.js";
 import fetch from "node-fetch";
 import fs from "fs";
@@ -21,18 +22,21 @@ const VERIFIED_ROLES = [
   "1422482866230525952", // 추가 역할 1
   "1422284952799547463", // 추가 역할 2
 ];
-const AUTH_CHANNEL_ID = "1426572704055558205"; // 명령어 사용 채널
-
-const rest = new REST({ version: "10" }).setToken(TOKEN);
+const AUTH_CHANNEL_ID = "1426572704055558205";
+const LOG_CHANNEL_ID = "1412633302862397513";
 const DATA_FILE = "authData.json";
-if (!fs.existsSync(DATA_FILE)) fs.writeFileSync(DATA_FILE, "{}");
+const BAN_FILE = "banned.json";
 
-// ✅ 한국시간 함수
+// ✅ 파일 초기화
+if (!fs.existsSync(DATA_FILE)) fs.writeFileSync(DATA_FILE, "{}");
+if (!fs.existsSync(BAN_FILE)) fs.writeFileSync(BAN_FILE, "{}");
+
+// ✅ 한국시간 포맷
 function getKSTTime() {
-  return new Date().toLocaleTimeString("ko-KR", {
-    hour: "2-digit",
-    minute: "2-digit",
-  });
+  const now = new Date();
+  const utc = now.getTime() + now.getTimezoneOffset() * 60000;
+  const kst = new Date(utc + 9 * 60 * 60 * 1000);
+  return kst.toLocaleTimeString("ko-KR", { hour: "2-digit", minute: "2-digit" });
 }
 
 // ✅ 기본 오류 임베드
@@ -46,22 +50,44 @@ function errorEmbed(code = "99999") {
     .setFooter({ text: `뎀넴의여유봇 • ${getKSTTime()}` });
 }
 
-// ✅ 본체
+// ✅ 명령어 등록
+const rest = new REST({ version: "10" }).setToken(TOKEN);
+
 export async function setupAuth(client) {
   // 슬래시 명령어 등록
   const commands = [
     new SlashCommandBuilder()
       .setName("인증하기")
       .setDescription("로블록스 계정과 디스코드 계정을 연동합니다."),
+    new SlashCommandBuilder()
+      .setName("대량삭제")
+      .setDescription("메시지를 대량 삭제합니다.")
+      .addIntegerOption((opt) =>
+        opt.setName("개수").setDescription("삭제할 메시지 개수").setRequired(true)
+      )
+      .addUserOption((opt) =>
+        opt.setName("대상").setDescription("특정 사용자의 메시지만 삭제")
+      ),
+    new SlashCommandBuilder()
+      .setName("수동인증")
+      .setDescription("수동으로 인증을 부여합니다. (관리자 전용)")
+      .addUserOption((opt) =>
+        opt.setName("대상").setDescription("인증할 사용자").setRequired(true)
+      )
+      .addStringOption((opt) =>
+        opt.setName("robloxid").setDescription("로블록스 ID (숫자)").setRequired(true)
+      ),
   ].map((cmd) => cmd.toJSON());
 
   await rest.put(Routes.applicationCommands(CLIENT_ID), { body: commands });
-  console.log("✅ /인증하기 명령어 등록 완료");
+  console.log("✅ 인증 명령어 등록 완료");
 
-  // 메인 리스너
+  // ============================================================
+  // ✅ 인증 명령어
+  // ============================================================
   client.on("interactionCreate", async (interaction) => {
     try {
-      // ✅ /인증하기 명령어
+      // ✅ /인증하기
       if (interaction.isCommand() && interaction.commandName === "인증하기") {
         if (interaction.channelId !== AUTH_CHANNEL_ID)
           return interaction.reply({
@@ -70,13 +96,8 @@ export async function setupAuth(client) {
           });
 
         const member = await interaction.guild.members.fetch(interaction.user.id);
-        const hasVerifiedRole = VERIFIED_ROLES.some((r) =>
-          member.roles.cache.has(r)
-        );
-        const data = JSON.parse(fs.readFileSync(DATA_FILE, "utf8"));
-        const existing = data[interaction.user.id];
-
-        if (hasVerifiedRole)
+        const hasVerified = VERIFIED_ROLES.some((r) => member.roles.cache.has(r));
+        if (hasVerified)
           return interaction.reply({
             content: "<:Finger:1429722343424659568> 이미 인증된 사용자입니다.",
             ephemeral: true,
@@ -102,19 +123,19 @@ export async function setupAuth(client) {
         return interaction.reply({ embeds: [embed], components: [row], ephemeral: true });
       }
 
-      // ❌ 거절 버튼 클릭 시
+      // ❌ 거절 버튼
       if (interaction.isButton() && interaction.customId === "deny_auth") {
         const embed = new EmbedBuilder()
           .setColor("#ffc443")
           .setTitle("<:Warning:1429715991591387146> 본인인증 실패")
           .setDescription(
-            `본인인증이 실패되었어요.\n\n> 오류 : **본인인증 거부**\n> 코드 : 40301\n> 조치 : \`인증취소\`\n> **인증** 후 채널을 이용할 수 있어요.`
+            "본인인증이 실패되었어요.\n\n> 오류 : **본인인증 거부**\n> 코드 : 40301\n> 조치 : `인증취소`\n> **인증** 후 채널을 이용할 수 있어요."
           )
           .setFooter({ text: `뎀넴의여유봇 • ${getKSTTime()}` });
         return interaction.update({ embeds: [embed], components: [] });
       }
 
-      // 🧩 연동하기 버튼 클릭 시 (모달 열기)
+      // 🧩 연동하기 버튼
       if (interaction.isButton() && interaction.customId === "start_auth") {
         const modal = new ModalBuilder()
           .setCustomId("roblox_modal")
@@ -124,115 +145,99 @@ export async function setupAuth(client) {
           .setLabel("연동할 Roblox 계정을 입력해주세요.")
           .setStyle(TextInputStyle.Short)
           .setRequired(true);
-        const row = new ActionRowBuilder().addComponents(input);
-        modal.addComponents(row);
+        modal.addComponents(new ActionRowBuilder().addComponents(input));
         return interaction.showModal(modal);
       }
 
       // 🧾 모달 제출
       if (interaction.isModalSubmit() && interaction.customId === "roblox_modal") {
         const username = interaction.fields.getTextInputValue("roblox_username");
+        const banned = JSON.parse(fs.readFileSync(BAN_FILE, "utf8"));
 
         const embedLoading = new EmbedBuilder()
           .setColor("#5661EA")
           .setTitle("<a:Loading:1429705917267705937> Roblox 계정 검색중...")
-          .setDescription(
-            `Roblox 계정을 검색중입니다. 잠시만 기다려주세요.\n\n입력한 닉네임: **${username}**`
-          )
+          .setDescription(`입력한 닉네임: **${username}**\n잠시만 기다려주세요.`)
           .setFooter({ text: `뎀넴의여유봇 • ${getKSTTime()}` });
 
         await interaction.reply({ embeds: [embedLoading], ephemeral: true });
 
+        // 5초 대기
+        await new Promise((r) => setTimeout(r, 5000));
+
         let robloxUser = null;
         try {
-          const search = await fetch(
+          const res = await fetch(
             `https://users.roblox.com/v1/users/search?keyword=${encodeURIComponent(
               username
-            )}&limit=10`
+            )}&limit=1`
           );
-          const searchData = await search.json();
+          const data = await res.json();
+          if (data.data?.length) robloxUser = data.data[0];
+        } catch {
+          return interaction.editReply({ embeds: [errorEmbed("40401")], components: [] });
+        }
 
-          if (searchData.data && searchData.data.length > 0) {
-            robloxUser =
-              searchData.data.find(
-                (u) =>
-                  u.name.toLowerCase() === username.toLowerCase() ||
-                  u.displayName.toLowerCase() === username.toLowerCase()
-              ) || searchData.data[0];
+        if (!robloxUser)
+          return interaction.editReply({ embeds: [errorEmbed("40401")], components: [] });
+
+        // 차단 확인
+        const bannedUser = Object.values(banned).find(
+          (x) => x.robloxId === robloxUser.id
+        );
+        if (bannedUser) {
+          const member = await interaction.guild.members
+            .fetch(interaction.user.id)
+            .catch(() => null);
+          if (member) {
+            await member.timeout(24 * 60 * 60 * 1000, "차단된 로블록스 계정으로 인증 시도");
           }
 
-          if (!robloxUser) {
-            const res2 = await fetch("https://users.roblox.com/v1/usernames/users", {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ usernames: [username] }),
-            });
-            const data2 = await res2.json();
-            if (data2.data && data2.data.length > 0) robloxUser = data2.data[0];
-          }
-
-          // 5초간 유지
-          await new Promise((resolve) => setTimeout(resolve, 5000));
-
-          if (!robloxUser) {
-            const embedFail = new EmbedBuilder()
-              .setColor("#ffc443")
-              .setTitle("<:Warning:1429715991591387146> Roblox 계정을 찾지 못했어요.")
-              .setDescription(
-                `연동할 계정을 다시 확인해주세요.\n\n> 오류 : **Roblox 계정 검색 오류**\n> 코드 : 40401\n> 조치 : \`인증취소\`\n> **인증** 후 채널을 이용할 수 있어요.`
-              )
-              .setFooter({ text: `뎀넴의여유봇 • ${getKSTTime()}` });
-            return interaction.editReply({ embeds: [embedFail], components: [] });
-          }
-
-          // ✅ 계정 찾은 경우
-          const verifyRow = new ActionRowBuilder().addComponents(
-            new ButtonBuilder()
-              .setCustomId(`verify_${robloxUser.id}`)
-              .setLabel("연동하기")
-              .setStyle(ButtonStyle.Success),
-            new ButtonBuilder()
-              .setCustomId("re_search")
-              .setLabel("다시 검색")
-              .setStyle(ButtonStyle.Danger)
-          );
-
-          const embedFound = new EmbedBuilder()
-            .setColor("#5661EA")
-            .setTitle("<:Link:1429725659013578813> Roblox 계정을 찾았습니다.")
+          const logChannel = await client.channels.fetch(LOG_CHANNEL_ID);
+          const alert = new EmbedBuilder()
+            .setColor("#ffc443")
+            .setTitle("<:Warning:1429715991591387146> 서버 보안 주의")
             .setDescription(
-              `연동할 계정이 맞는지 확인해주세요.\n> 프로필: **${robloxUser.displayName} (@${robloxUser.name})**`
+              `> 격리자 : ${interaction.user}\n> -# ID : ${interaction.user.id}\n> 로블록스 : ${robloxUser.name}\n> -# ID : ${robloxUser.id}\n\n> 차단자 : <@${bannedUser.discordId}>\n> -# ID : ${bannedUser.discordId}\n> 로블록스 : ${bannedUser.robloxName}\n> -# ID : ${bannedUser.robloxId}\n\n이 봇은 정확하지 않을 수 있어요.`
             )
             .setFooter({ text: `뎀넴의여유봇 • ${getKSTTime()}` });
-
-          await interaction.editReply({ embeds: [embedFound], components: [verifyRow] });
-        } catch (err) {
-          console.error("Roblox API 오류:", err);
-          await interaction.editReply({ embeds: [errorEmbed("50001")], components: [] });
+          return logChannel.send({ embeds: [alert] });
         }
-      }
 
-      // 🔁 다시 검색 버튼
-      if (interaction.isButton() && interaction.customId === "re_search") {
-        const embed = new EmbedBuilder()
+        // ✅ 계정 찾음
+        const embedFound = new EmbedBuilder()
           .setColor("#5661EA")
-          .setTitle("<a:Loading:1429705917267705937> 다시 검색을 시작합니다.")
-          .setDescription("새로운 Roblox 계정을 입력해주세요.")
+          .setTitle("<:Link:1429725659013578813> Roblox 계정을 찾았습니다.")
+          .setDescription(
+            `연동할 계정이 맞는지 확인해주세요.\n> 프로필: **${robloxUser.displayName} (@${robloxUser.name})**`
+          )
           .setFooter({ text: `뎀넴의여유봇 • ${getKSTTime()}` });
-        return interaction.update({ embeds: [embed], components: [] });
+
+        const verifyRow = new ActionRowBuilder().addComponents(
+          new ButtonBuilder()
+            .setCustomId(`verify_${robloxUser.id}`)
+            .setLabel("연동하기")
+            .setStyle(ButtonStyle.Success),
+          new ButtonBuilder()
+            .setCustomId("re_search")
+            .setLabel("다시 검색")
+            .setStyle(ButtonStyle.Danger)
+        );
+
+        return interaction.editReply({ embeds: [embedFound], components: [verifyRow] });
       }
 
-      // ✅ 연동하기 버튼 클릭 시 — 인증번호 발급
+      // ✅ 연동하기 버튼 클릭 시
       if (interaction.isButton() && interaction.customId.startsWith("verify_")) {
         const robloxId = interaction.customId.split("_")[1];
         const userId = interaction.user.id;
-
         const verifyCode = Math.floor(10000 + Math.random() * 90000).toString();
+
         const data = JSON.parse(fs.readFileSync(DATA_FILE, "utf8"));
         data[userId] = { robloxId, verifyCode, verified: false };
         fs.writeFileSync(DATA_FILE, JSON.stringify(data, null, 2));
 
-        const embedCode = new EmbedBuilder()
+        const embed = new EmbedBuilder()
           .setColor("#4d9802")
           .setTitle("<a:Loading:1429705917267705937> Roblox 계정을 인증해주세요.")
           .setDescription(
@@ -251,175 +256,134 @@ export async function setupAuth(client) {
             .setStyle(ButtonStyle.Secondary)
         );
 
-        return interaction.update({ embeds: [embedCode], components: [row] });
+        return interaction.update({ embeds: [embed], components: [row] });
       }
 
-      // 🔍 인증하기 버튼 클릭 시 — Roblox API로 실제 확인
+      // 🧩 인증하기 버튼
       if (interaction.isButton() && interaction.customId.startsWith("check_")) {
         const userId = interaction.customId.split("_")[1];
         const data = JSON.parse(fs.readFileSync(DATA_FILE, "utf8"));
         const entry = data[userId];
         if (!entry)
-          return interaction.reply({
-            content: "⚠️ 인증 세션이 만료되었습니다. 다시 시도해주세요.",
-            ephemeral: true,
-          });
+          return interaction.reply({ content: "<:Warning:1429715991591387146> 세션이 만료되었습니다.", ephemeral: true });
 
-        try {
-          const response = await fetch(`https://users.roblox.com/v1/users/${entry.robloxId}`);
-          const robloxData = await response.json();
+        const res = await fetch(`https://users.roblox.com/v1/users/${entry.robloxId}`);
+        const robloxData = await res.json();
 
-          if (robloxData.description?.includes(entry.verifyCode)) {
-            entry.verified = true;
-            fs.writeFileSync(DATA_FILE, JSON.stringify(data, null, 2));
+        if (robloxData.description?.includes(entry.verifyCode)) {
+          entry.verified = true;
+          entry.robloxName = robloxData.name;
+          fs.writeFileSync(DATA_FILE, JSON.stringify(data, null, 2));
 
-            const guild = interaction.guild;
-            const member = await guild.members.fetch(userId);
-            for (const roleId of VERIFIED_ROLES) {
-              await member.roles.add(roleId).catch(() => {});
-            }
+          const guild = interaction.guild;
+          const member = await guild.members.fetch(userId);
+          for (const r of VERIFIED_ROLES) await member.roles.add(r).catch(() => {});
 
-            const embedDone = new EmbedBuilder()
-              .setColor("#5661EA")
-              .setTitle("<:Finger:1429722343424659568> 인증이 완료되었습니다.")
-              .setDescription(
-                `<@${userId}>님, 로블록스 **${robloxData.name}** 계정으로 인증이 완료되었습니다.`
-              );
+          const embed = new EmbedBuilder()
+            .setColor("#5661EA")
+            .setTitle("<:Finger:1429722343424659568> 인증이 완료되었습니다.")
+            .setDescription(
+              `<@${userId}>님, 로블록스 **${robloxData.name}** 계정으로 인증이 완료되었습니다.`
+            )
+            .setFooter({ text: `뎀넴의여유봇 • ${getKSTTime()}` });
 
-            const channel = await client.channels.fetch(interaction.channelId);
-            await channel.send({ embeds: [embedDone] });
-            return interaction.update({ embeds: [], components: [] });
-          } else {
-            const embedFail = new EmbedBuilder()
-              .setColor("#ffc443")
-              .setTitle("<:Warning:1429715991591387146> 인증이 되지 않았어요.")
-              .setDescription(
-                `Roblox 계정에 인증번호가 입력되지 않았어요.\n\n> 오류 : **인증번호 미일치**\n> 코드 : 40601\n> 조치 : \`인증취소\`\n> **인증** 후 채널을 이용할 수 있어요.`
-              )
-              .setFooter({ text: `뎀넴의여유봇 • ${getKSTTime()}` });
-            return interaction.update({ embeds: [embedFail], components: [] });
-          }
-        } catch (err) {
-          console.error("Roblox API 인증 오류:", err);
-          return interaction.update({ embeds: [errorEmbed("50002")], components: [] });
+          const channel = await client.channels.fetch(interaction.channelId);
+          await channel.send({ embeds: [embed] });
+          return interaction.update({ embeds: [], components: [] });
+        } else {
+          return interaction.update({ embeds: [errorEmbed("40601")], components: [] });
         }
       }
-
-      // 🔁 인증번호가 검열되었어요 → 단어로 재발급
-      if (interaction.isButton() && interaction.customId.startsWith("regen_")) {
-        const userId = interaction.customId.split("_")[1];
-        const data = JSON.parse(fs.readFileSync(DATA_FILE, "utf8"));
-        const entry = data[userId];
-        if (!entry)
-          return interaction.reply({
-            content: "⚠️ 인증 세션이 만료되었습니다. 다시 시도해주세요.",
-            ephemeral: true,
-          });
-
-        const words = ["멋진 사과", "푸른 하늘", "기쁜 하루", "평화의 빛", "행복한 순간"];
-        const verifyCode = words[Math.floor(Math.random() * words.length)];
-        entry.verifyCode = verifyCode;
-        fs.writeFileSync(DATA_FILE, JSON.stringify(data, null, 2));
-
-        const embedCode = new EmbedBuilder()
-          .setColor("#4d9802")
-          .setTitle("<a:Loading:1429705917267705937> Roblox 계정을 인증해주세요.")
-          .setDescription(
-            `연동할 계정의 프로필 소개에 아래 인증문구를 입력해주세요.\n\n> **${verifyCode}**\n> Roblox 계정 프로필 > 소개에 인증문구를 입력해 주세요.`
-          )
-          .setFooter({ text: `뎀넴의여유봇 • ${getKSTTime()}` });
-
-        const row = new ActionRowBuilder().addComponents(
-          new ButtonBuilder()
-            .setCustomId(`check_${userId}`)
-            .setLabel("인증하기")
-            .setStyle(ButtonStyle.Primary),
-          new ButtonBuilder()
-            .setCustomId(`regen_${userId}`)
-            .setLabel("인증번호가 검열되었어요")
-            .setStyle(ButtonStyle.Secondary)
-        );
-
-        return interaction.update({ embeds: [embedCode], components: [row] });
-      }
     } catch (err) {
-      console.error("인증 프로세스 오류:", err);
+      console.error("❌ 인증 오류:", err);
+      try {
+        await interaction.reply({ embeds: [errorEmbed("50001")], ephemeral: true });
+      } catch {}
     }
   });
 
-  // 📩 관리자 DM에서 "?유저ID" 입력 시
-  client.on("messageCreate", async (message) => {
-    try {
-      if (message.channel.type !== 1) return;
-      if (message.author.bot) return;
-      if (!message.content.startsWith("?")) return;
+  // ============================================================
+  // ✅ 관리자 DM 명령어 (?유저ID / ?ban / ?unban)
+  // ============================================================
+  client.on("messageCreate", async (msg) => {
+    if (msg.channel.type !== 1 || msg.author.bot) return;
+    if (!["1410269476011770059"].includes(msg.author.id)) return;
+    const args = msg.content.split(" ");
+    const command = args[0];
+    const data = JSON.parse(fs.readFileSync(DATA_FILE, "utf8"));
+    const banned = JSON.parse(fs.readFileSync(BAN_FILE, "utf8"));
 
-      const userId = message.content.replace("?", "").trim();
-      if (!/^\d+$/.test(userId)) {
-        return message.channel.send(
-          "<:Warning:1429715991591387146> 올바른 Discord 사용자 ID를 입력해주세요."
-        );
-      }
-
-      const data = JSON.parse(fs.readFileSync(DATA_FILE, "utf8"));
+    // ❓ ?유저ID
+    if (command.startsWith("?") && /^\?\d+$/.test(command)) {
+      const userId = command.slice(1);
       const entry = data[userId];
       if (!entry) {
-        return message.channel.send(
+        const warn = await msg.channel.send(
           "<:Nocheck:1429716350892507137> 해당 유저의 인증정보를 찾을 수 없습니다."
         );
+        setTimeout(() => warn.delete().catch(() => {}), 2000);
+        return;
       }
 
       const user = await client.users.fetch(userId).catch(() => null);
-      const mainGuild = await client.guilds.fetch("1410625687580180582");
-      const member = await mainGuild.members.fetch(userId).catch(() => null);
-
-      const roleMap = {
-        "1422944460219748362": "대한민국 대통령실",
-        "1422945355925819413": "국가정보원",
-        "1422942818938388510": "대한민국 감사원",
-        "1422945857275166741": "대한민국 대법원",
-        "1422946396100890745": "대통령실 경호처",
-        "1422947629645430804": "대한민국 외교부",
-        "1422945989215522817": "대한민국 행정법원",
-        "1422948537293078528": "한미연합",
-      };
-
-      let roleName = "없음";
-      if (member) {
-        const foundRole = Object.entries(roleMap).find(([id]) =>
-          member.roles.cache.has(id)
-        );
-        if (foundRole) roleName = foundRole[1].split("ㅣ")[0];
-      }
-
-      let title = "없음";
-      if (member?.nickname && member.nickname.includes("[")) {
-        const match = member.nickname.match(/\[(.*?)\]/);
-        if (match) title = match[1];
-      }
+      const guild = await client.guilds.fetch("1410625687580180582");
+      const member = await guild.members.fetch(userId).catch(() => null);
+      const verified = entry.verified ? "완료" : "미완료";
 
       const embed = new EmbedBuilder()
         .setColor("#5661EA")
-        .setTitle(`${user?.username || "Unknown"} 님의 정보`)
+        .setTitle(`<:Info:1429877040949100654> ${user?.username}의 정보`)
         .setDescription(
-          `> Discord : ${user?.tag || "알 수 없음"}\n` +
-            `> Roblox : ${entry.robloxName}\n` +
-            `> 소속 : ${roleName}\n` +
-            `> 직책 : ${title}`
+          `사용자의 신상정보입니다.\n> Discord : ${user?.tag}\n> Roblox : ${entry.robloxName}\n> 본인인증 : ${verified}`
         )
         .setFooter({ text: `뎀넴의여유봇 • ${getKSTTime()}` });
+      return msg.channel.send({ embeds: [embed] });
+    }
 
-      await message.channel.send({ embeds: [embed] });
-    } catch (err) {
-      console.error("<:Nocheck:1429716350892507137> DM 조회 오류:", err);
-      const error = new EmbedBuilder()
-        .setColor("#ffc443")
-        .setTitle("<:Warning:1429715991591387146> 오류가 발생했어요.")
+    // 🚫 ?ban
+    if (command === "?ban") {
+      const id = args[1];
+      if (!id)
+        return msg.channel.send("<:Warning:1429715991591387146> 사용자 ID가 필요합니다.").then((m) =>
+          setTimeout(() => m.delete().catch(() => {}), 2000)
+        );
+      const reason = args.slice(2).join(" ") || "없음";
+      const entry = data[id];
+      if (!entry) return msg.channel.send("<:Warning:1429715991591387146> 인증된 사용자가 아닙니다.");
+
+      banned[id] = {
+        discordId: id,
+        robloxId: entry.robloxId,
+        robloxName: entry.robloxName,
+        reason,
+      };
+      fs.writeFileSync(BAN_FILE, JSON.stringify(banned, null, 2));
+
+      const embed = new EmbedBuilder()
+        .setColor("#5661EA")
+        .setTitle(`<:Nocheck:1429716350892507137> ${entry.robloxName}을 차단했습니다.`)
         .setDescription(
-          `다시 시도해 주세요.\n\n> 오류 : **DM 조회 실패**\n> 코드 : 70001\n> 조치 : \`관리자 문의\``
+          `> Discord : <@${id}>\n> -# ID : ${id}\n> Roblox : ${entry.robloxName}\n> -# ID : ${entry.robloxId}\n> 사유 : ${reason}`
         )
         .setFooter({ text: `뎀넴의여유봇 • ${getKSTTime()}` });
-      await message.channel.send({ embeds: [error] });
+      return msg.channel.send({ embeds: [embed] });
+    }
+
+    // ✅ ?unban
+    if (command === "?unban") {
+      const id = args[1];
+      const reason = args.slice(2).join(" ") || "없음";
+      if (!banned[id])
+        return msg.channel.send("<:Warning:1429715991591387146> 해당 사용자는 차단 목록에 없습니다.");
+      delete banned[id];
+      fs.writeFileSync(BAN_FILE, JSON.stringify(banned, null, 2));
+
+      const embed = new EmbedBuilder()
+        .setColor("#566…EA`)
+        .setTitle(`${entry.robloxName}님의 서버차단이 해제되었습니다.`)
+        .setDescription(`> 사유 : ${reason}`)
+        .setFooter({ text: `뎀넴의여유봇 • ${getKSTTime()}` });
+      return msg.channel.send({ embeds: [embed] });
     }
   });
-} // ✅ setupAuth 닫힘
+}
