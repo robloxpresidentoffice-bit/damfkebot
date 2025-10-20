@@ -151,74 +151,98 @@ export async function setupAuth(client) {
         await interaction.showModal(modal);
       }
 
-      // 🧾 모달 제출
-      if (interaction.isModalSubmit() && interaction.customId === "roblox_modal") {
-        const username = interaction.fields.getTextInputValue("roblox_username");
+// 🧾 모달 제출
+if (interaction.isModalSubmit() && interaction.customId === "roblox_modal") {
+  const username = interaction.fields.getTextInputValue("roblox_username");
 
-        const embedLoading = new EmbedBuilder()
-          .setColor("#5661EA")
-          .setTitle("<a:Loading:1429705917267705937> Roblox 계정 검색중...")
-          .setDescription(
-            `Roblox 계정을 검색중입니다. 잠시만 기다려주세요.\n\n입력한 닉네임: **${username}**`
-          )
-          .setFooter({ text: `뎀넴의여유봇 • ${getKSTTime()}` });
-        await interaction.reply({ embeds: [embedLoading], ephemeral: true });
+  // ✅ 1️⃣ "검색중..." 임베드 먼저 표시
+  const embedLoading = new EmbedBuilder()
+    .setColor("#5661EA")
+    .setTitle("<a:Loading:1429705917267705937> Roblox 계정 검색중...")
+    .setDescription(
+      `Roblox 계정을 검색중입니다. 잠시만 기다려주세요.\n\n입력한 닉네임: **${username}**`
+    )
+    .setFooter({ text: `뎀넴의여유봇 • ${getKSTTime()}` });
 
-        try {
-          const search = await fetch(
-            `https://users.roblox.com/v1/users/search?keyword=${encodeURIComponent(
-              username
-            )}&limit=10`
-          );
-          const searchData = await search.json();
+  await interaction.reply({ embeds: [embedLoading], ephemeral: true });
 
-          let robloxUser = null;
-          if (searchData.data && searchData.data.length > 0) {
-            robloxUser =
-              searchData.data.find(
-                (u) =>
-                  u.name.toLowerCase() === username.toLowerCase() ||
-                  u.displayName.toLowerCase() === username.toLowerCase()
-              ) || searchData.data[0];
-          }
+  // ✅ 2️⃣ Roblox API 요청
+  let robloxUser = null;
 
-          if (!robloxUser) {
-            const embed = new EmbedBuilder()
-              .setColor("#ffc443")
-              .setTitle("<:Warning:1429715991591387146> Roblox 계정을 찾지 못했어요.")
-              .setDescription(
-                `연동할 계정을 다시 확인해주세요.\n\n> 오류 : **Roblox 계정 검색 오류**\n> 코드 : 40401\n> 조치 : \`인증취소\`\n> **인증** 후 채널을 이용할 수 있어요.`
-              )
-              .setFooter({ text: `뎀넴의여유봇 • ${getKSTTime()}` });
-            return interaction.editReply({ embeds: [embed], components: [] });
-          }
+  try {
+    const search = await fetch(
+      `https://users.roblox.com/v1/users/search?keyword=${encodeURIComponent(
+        username
+      )}&limit=10`
+    );
+    const searchData = await search.json();
 
-          // ✅ 찾은 계정 표시
-          const verifyRow = new ActionRowBuilder().addComponents(
-            new ButtonBuilder()
-              .setCustomId(`verify_link_${robloxUser.id}`)
-              .setLabel("연동하기")
-              .setStyle(ButtonStyle.Success),
-            new ButtonBuilder()
-              .setCustomId("re_search")
-              .setLabel("다시 검색")
-              .setStyle(ButtonStyle.Danger)
-          );
+    if (searchData.data && searchData.data.length > 0) {
+      robloxUser =
+        searchData.data.find(
+          (u) =>
+            u.name.toLowerCase() === username.toLowerCase() ||
+            u.displayName.toLowerCase() === username.toLowerCase()
+        ) || searchData.data[0];
+    }
 
-          const embedFound = new EmbedBuilder()
-            .setColor("#5661EA")
-            .setTitle("<:Link:1429725659013578813> Roblox 계정을 찾았습니다.")
-            .setDescription(
-              `연동할 계정이 맞는지 확인해주세요.\n> 프로필: **${robloxUser.displayName} (@${robloxUser.name})**`
-            )
-            .setFooter({ text: `뎀넴의여유봇 • ${getKSTTime()}` });
+    // POST 방식 보조 검색
+    if (!robloxUser) {
+      const res2 = await fetch("https://users.roblox.com/v1/usernames/users", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ usernames: [username] }),
+      });
+      const data2 = await res2.json();
 
-          await interaction.editReply({ embeds: [embedFound], components: [verifyRow] });
-        } catch (err) {
-          console.error("Roblox API 오류:", err);
-          await interaction.editReply({ embeds: [errorEmbed("50001")], components: [] });
-        }
+      if (data2.data && data2.data.length > 0) {
+        robloxUser = data2.data[0];
       }
+    }
+
+    // ✅ 3️⃣ “은행처럼 신중한” 딜레이 (5초)
+    await new Promise((resolve) => setTimeout(resolve, 5000));
+
+    // ✅ 4️⃣ 결과 처리
+    if (!robloxUser) {
+      const embedFail = new EmbedBuilder()
+        .setColor("#ffc443")
+        .setTitle("<:Warning:1429715991591387146> Roblox 계정을 찾지 못했어요.")
+        .setDescription(
+          `연동할 계정을 다시 확인해주세요.\n\n> 오류 : **Roblox 계정 검색 오류**\n> 코드 : 40401\n> 조치 : \`인증취소\`\n> **인증** 후 채널을 이용할 수 있어요.`
+        )
+        .setFooter({ text: `뎀넴의여유봇 • ${getKSTTime()}` });
+
+      return interaction.editReply({ embeds: [embedFail], components: [] });
+    }
+
+    // ✅ 5️⃣ 계정 찾은 경우 결과 표시
+    const verifyRow = new ActionRowBuilder().addComponents(
+      new ButtonBuilder()
+        .setCustomId(`verify_link_${robloxUser.id}`)
+        .setLabel("연동하기")
+        .setStyle(ButtonStyle.Success),
+      new ButtonBuilder()
+        .setCustomId("re_search")
+        .setLabel("다시 검색")
+        .setStyle(ButtonStyle.Danger)
+    );
+
+    const embedFound = new EmbedBuilder()
+      .setColor("#5661EA")
+      .setTitle("<:Link:1429725659013578813> Roblox 계정을 찾았습니다.")
+      .setDescription(
+        `연동할 계정이 맞는지 확인해주세요.\n> 프로필: **${robloxUser.displayName} (@${robloxUser.name})**`
+      )
+      .setFooter({ text: `뎀넴의여유봇 • ${getKSTTime()}` });
+
+    await interaction.editReply({ embeds: [embedFound], components: [verifyRow] });
+  } catch (err) {
+    console.error("Roblox API 오류:", err);
+    await interaction.editReply({ embeds: [errorEmbed("50001")], components: [] });
+  }
+}
+
 
       // 🟠 다시 검색
       if (interaction.isButton() && interaction.customId === "re_search") {
@@ -315,3 +339,4 @@ export async function setupAuth(client) {
     }
   });
 }
+
