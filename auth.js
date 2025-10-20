@@ -511,4 +511,5 @@ if (command === "?ban") {
       console.error("⚠️ 관리자 DM 명령 오류:", err);
     }
   });
-    }
+}
+
