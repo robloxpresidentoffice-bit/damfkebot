@@ -379,7 +379,7 @@ export async function setupAuth(client) {
       fs.writeFileSync(BAN_FILE, JSON.stringify(banned, null, 2));
 
       const embed = new EmbedBuilder()
-        .setColor("#566…EA`)
+        .setColor("#5661EA")
         .setTitle(`${entry.robloxName}님의 서버차단이 해제되었습니다.`)
         .setDescription(`> 사유 : ${reason}`)
         .setFooter({ text: `뎀넴의여유봇 • ${getKSTTime()}` });
@@ -387,3 +387,4 @@ export async function setupAuth(client) {
     }
   });
 }
+
