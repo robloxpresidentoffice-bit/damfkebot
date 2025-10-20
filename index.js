@@ -163,7 +163,7 @@ client.on("messageCreate", async (message) => {
         {
           parts: [
             {
-              text: `너는 나의 친한 친구야\n항상 따뜻하고 자연스러운 한국어로 이야기하듯 대화해줘.\n\n내가 물어볼게:\n${question}`,
+              text: `너는 나의 친한 친구야\n항상 따뜻하고 자연스러운 한국어로 이야기하듯 대화해줘. 이모티콘 사용은 자제해줘.\n\n내가 물어볼게:\n${question}`,
             },
           ],
         },
@@ -228,3 +228,4 @@ client.on("messageCreate", async (message) => {
 
 // ✅ 로그인
 client.login(DISCORD_TOKEN);
+
