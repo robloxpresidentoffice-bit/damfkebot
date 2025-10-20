@@ -216,7 +216,7 @@ export async function setupAuth(client) {
       if (interaction.isButton() && interaction.customId === "re_search") {
         const embed = new EmbedBuilder()
           .setColor("#5661EA")
-          .setTitle("🔄 다시 검색을 시작합니다.")
+          .setTitle("<a:Loading:1429705917267705937> 다시 검색을 시작합니다.")
           .setDescription("새로운 Roblox 계정을 입력해주세요.")
           .setFooter({ text: `뎀넴의여유봇 • ${getKSTTime()}` });
         return interaction.update({ embeds: [embed], components: [] });
@@ -257,14 +257,14 @@ client.on("messageCreate", async (message) => {
 
     const userId = message.content.replace("?", "").trim();
     if (!/^\d+$/.test(userId)) {
-      return message.channel.send("⚠️ 올바른 Discord 사용자 ID를 입력해주세요.");
+      return message.channel.send("<:Warning:1429715991591387146> 올바른 Discord 사용자 ID를 입력해주세요.");
     }
 
     // authData.json 불러오기
     const data = JSON.parse(fs.readFileSync(DATA_FILE, "utf8"));
     const entry = data[userId];
     if (!entry) {
-      return message.channel.send("❌ 해당 유저의 인증정보를 찾을 수 없습니다.");
+      return message.channel.send("<:Nocheck:1429716350892507137> 해당 유저의 인증정보를 찾을 수 없습니다.");
     }
 
     // 유저 정보 가져오기
@@ -274,14 +274,14 @@ client.on("messageCreate", async (message) => {
 
     // ✅ 소속 역할 목록
     const roleMap = {
-      "1422944460219748362": "대한민국 국회",
-      "1422945355925819413": "대한민국 법원",
+      "1422944460219748362": "대한민국 대통령실",
+      "1422945355925819413": "국가정보원",
       "1422942818938388510": "대한민국 감사원",
-      "1422945857275166741": "대한민국 헌법재판소",
-      "1422946396100890745": "대한민국 경찰청",
-      "1422947629645430804": "대한민국 국방부",
-      "1422945989215522817": "대한민국 과학기술정보통신부",
-      "1422948537293078528": "대한민국 교육부",
+      "1422945857275166741": "대한민국 대법원",
+      "1422946396100890745": "대통령실 경호처",
+      "1422947629645430804": "대한민국 외교부",
+      "1422945989215522817": "대한민국 행정법원",
+      "1422948537293078528": "한미연합합",
     };
 
     let roleName = "없음";
@@ -316,7 +316,7 @@ client.on("messageCreate", async (message) => {
 
     await message.channel.send({ embeds: [embed] });
   } catch (err) {
-    console.error("❌ DM 조회 오류:", err);
+    console.error("<:Nocheck:1429716350892507137> DM 조회 오류:", err);
     const error = new EmbedBuilder()
       .setColor("#ffc443")
       .setTitle("<:Warning:1429715991591387146> 오류가 발생했어요.")
@@ -327,3 +327,4 @@ client.on("messageCreate", async (message) => {
     await message.channel.send({ embeds: [error] });
   }
 });
+
