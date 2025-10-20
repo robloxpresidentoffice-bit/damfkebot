@@ -201,7 +201,7 @@ if (interaction.isModalSubmit() && interaction.customId === "roblox_modal") {
     }
 
     // ✅ 3️⃣ “은행처럼 신중한” 딜레이 (5초)
-    await new Promise((resolve) => setTimeout(resolve, 5000));
+    await new Promise((resolve) => setTimeout(resolve, 3000));
 
     // ✅ 4️⃣ 결과 처리
     if (!robloxUser) {
@@ -217,24 +217,30 @@ if (interaction.isModalSubmit() && interaction.customId === "roblox_modal") {
     }
 
     // ✅ 5️⃣ 계정 찾은 경우 결과 표시
-    const verifyRow = new ActionRowBuilder().addComponents(
-      new ButtonBuilder()
-        .setCustomId(`verify_link_${robloxUser.id}`)
-        .setLabel("연동하기")
-        .setStyle(ButtonStyle.Success),
-      new ButtonBuilder()
-        .setCustomId("re_search")
-        .setLabel("다시 검색")
-        .setStyle(ButtonStyle.Danger)
-    );
+const verifyRow = new ActionRowBuilder().addComponents(
+  new ButtonBuilder()
+    .setCustomId(`verify_${robloxUser.id}`) // ✅ verify_link_ → verify_ 로 수정
+    .setLabel("연동하기")
+    .setStyle(ButtonStyle.Success),
+  new ButtonBuilder()
+    .setCustomId("re_search")
+    .setLabel("다시 검색")
+    .setStyle(ButtonStyle.Danger)
+);
 
-    const embedFound = new EmbedBuilder()
-      .setColor("#5661EA")
-      .setTitle("<:Link:1429725659013578813> Roblox 계정을 찾았습니다.")
-      .setDescription(
-        `연동할 계정이 맞는지 확인해주세요.\n> 프로필: **${robloxUser.displayName} (@${robloxUser.name})**`
-      )
-      .setFooter({ text: `뎀넴의여유봇 • ${getKSTTime()}` });
+const embedFound = new EmbedBuilder()
+  .setColor("#5661EA")
+  .setTitle("<:Link:1429725659013578813> Roblox 계정을 찾았습니다.")
+  .setDescription(
+    `연동할 계정이 맞는지 확인해주세요.\n> 프로필: **${robloxUser.displayName} (@${robloxUser.name})**`
+  )
+  .setFooter({ text: `뎀넴의여유봇 • ${getKSTTime()}` });
+
+await interaction.editReply({
+  embeds: [embedFound],
+  components: [verifyRow],
+});
+
 
     await interaction.editReply({ embeds: [embedFound], components: [verifyRow] });
   } catch (err) {
@@ -339,4 +345,5 @@ if (interaction.isModalSubmit() && interaction.customId === "roblox_modal") {
     }
   });
 }
+
 
