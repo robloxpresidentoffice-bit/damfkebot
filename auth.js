@@ -86,85 +86,217 @@ export async function setupAuth(client) {
   // ============================================================
   client.on("interactionCreate", async (interaction) => {
     try {
-      // ✅ /인증하기
-      if (interaction.isCommand() && interaction.commandName === "인증하기") {
-        if (interaction.channelId !== AUTH_CHANNEL_ID) {
-          return interaction.reply({
-            content: "<:Warning:1429715991591387146> 지정된 채널에서만 이용할 수 있습니다.",
-            ephemeral: true,
-          });
-        }
+      // ✅ /인증하기 (전체 비공개 진행, 마지막만 공개)
+if (interaction.isCommand() && interaction.commandName === "인증하기") {
+  if (interaction.channelId !== AUTH_CHANNEL_ID) {
+    return interaction.reply({
+      content: "<:Warning:1429715991591387146> 지정된 채널에서만 이용할 수 있습니다.",
+      ephemeral: true,
+    });
+  }
 
-        const member = await interaction.guild.members.fetch(interaction.user.id);
-        const hasVerified = VERIFIED_ROLES.some((r) => member.roles.cache.has(r));
-        if (hasVerified) {
-          return interaction.reply({
-            content: "<:Finger:1429722343424659568> 이미 인증된 사용자입니다.",
-            ephemeral: true,
-          });
-        }
+  const member = await interaction.guild.members.fetch(interaction.user.id);
+  const hasVerified = VERIFIED_ROLES.some((r) => member.roles.cache.has(r));
+  if (hasVerified) {
+    return interaction.reply({
+      content: "<:Finger:1429722343424659568> 이미 인증된 사용자입니다.",
+      ephemeral: true,
+    });
+  }
 
-        const embed = new EmbedBuilder()
-          .setColor("#5661EA")
-          .setTitle("<:Finger:1429722343424659568> 본인인증하기")
-          .setDescription("로블록스 계정을 연동해야 인증이 가능합니다.")
-          .setFooter({ text: `뎀넴의여유봇 • ${getKSTTime()}` });
+  const embed = new EmbedBuilder()
+    .setColor("#5661EA")
+    .setTitle("<:Finger:1429722343424659568> 본인인증하기")
+    .setDescription("로블록스 계정을 연동해야 인증이 가능합니다.")
+    .setFooter({ text: `뎀넴의여유봇 • ${getKSTTime()}` });
 
-        const row = new ActionRowBuilder().addComponents(
-          new ButtonBuilder().setCustomId("start_auth").setLabel("연동하기").setStyle(ButtonStyle.Success),
-          new ButtonBuilder().setCustomId("deny_auth").setLabel("거절").setStyle(ButtonStyle.Danger)
-        );
+  const row = new ActionRowBuilder().addComponents(
+    new ButtonBuilder()
+      .setCustomId("start_auth")
+      .setLabel("연동하기")
+      .setStyle(ButtonStyle.Success),
+    new ButtonBuilder()
+      .setCustomId("deny_auth")
+      .setLabel("거절")
+      .setStyle(ButtonStyle.Danger)
+  );
 
-        return interaction.reply({ embeds: [embed], components: [row], ephemeral: true });
-      }
+  // 비공개 시작
+  return interaction.reply({ embeds: [embed], components: [row], ephemeral: true });
+}
 
-      // ❌ 인증 거절
-      if (interaction.isButton() && interaction.customId === "deny_auth") {
-        const embed = new EmbedBuilder()
-          .setColor("#ffc443")
-          .setTitle("<:Warning:1429715991591387146> 본인인증 실패")
-          .setDescription("본인인증이 거부되었습니다. 다시 시도해주세요.")
-          .setFooter({ text: `뎀넴의여유봇 • ${getKSTTime()}` });
-        return interaction.update({ embeds: [embed], components: [] });
-      }
+// ❌ 인증 거절 버튼 (비공개 유지)
+if (interaction.isButton() && interaction.customId === "deny_auth") {
+  await interaction.deferUpdate();
+  const embed = new EmbedBuilder()
+    .setColor("#ffc443")
+    .setTitle("<:Warning:1429715991591387146> 본인인증 실패")
+    .setDescription(
+      "본인인증이 실패되었어요.\n\n> 오류 : **본인인증 거부**\n> 코드 : 40301\n> 조치 : `인증취소`\n> **인증** 후 채널을 이용할 수 있어요."
+    )
+    .setFooter({ text: `뎀넴의여유봇 • ${getKSTTime()}` });
 
-      // 🧾 모달 제출
-      if (interaction.isModalSubmit() && interaction.customId === "roblox_modal") {
-        const username = interaction.fields.getTextInputValue("roblox_username");
-        const embedLoading = new EmbedBuilder()
-          .setColor("#5661EA")
-          .setTitle("<a:Loading:1429705917267705937> Roblox 계정 검색중...")
-          .setDescription(`입력한 닉네임: **${username}**\n잠시만 기다려주세요.`)
-          .setFooter({ text: `뎀넴의여유봇 • ${getKSTTime()}` });
+  return interaction.followUp({ embeds: [embed], ephemeral: true });
+}
 
-        await interaction.reply({ embeds: [embedLoading], ephemeral: true });
-        await new Promise((r) => setTimeout(r, 5000));
+// 🧩 “연동하기” 버튼 → 모달 열기 (비공개 유지)
+if (interaction.isButton() && interaction.customId === "start_auth") {
+  await interaction.deferUpdate();
+  const modal = new ModalBuilder()
+    .setCustomId("roblox_modal")
+    .setTitle("Roblox 계정 연동하기");
 
-        let robloxUser = null;
-        try {
-          const search = await fetch(`https://users.roblox.com/v1/users/search?keyword=${encodeURIComponent(username)}&limit=1`);
-          const data = await search.json();
-          if (data.data?.length) robloxUser = data.data[0];
-        } catch {
-          return interaction.editReply({ embeds: [errorEmbed("40401")], components: [] });
-        }
+  const input = new TextInputBuilder()
+    .setCustomId("roblox_username")
+    .setLabel("연동할 Roblox 계정을 입력해주세요.")
+    .setStyle(TextInputStyle.Short)
+    .setRequired(true);
 
-        if (!robloxUser)
-          return interaction.editReply({ embeds: [errorEmbed("40401")], components: [] });
+  modal.addComponents(new ActionRowBuilder().addComponents(input));
+  return interaction.showModal(modal);
+}
 
-        const verifyRow = new ActionRowBuilder().addComponents(
-          new ButtonBuilder().setCustomId(`verify_${robloxUser.id}`).setLabel("연동하기").setStyle(ButtonStyle.Success),
-          new ButtonBuilder().setCustomId("re_search").setLabel("다시 검색").setStyle(ButtonStyle.Danger)
-        );
+// 🧾 모달 제출 → Roblox 계정 검색
+if (interaction.isModalSubmit() && interaction.customId === "roblox_modal") {
+  const username = interaction.fields.getTextInputValue("roblox_username");
+  const embedLoading = new EmbedBuilder()
+    .setColor("#5661EA")
+    .setTitle("<a:Loading:1429705917267705937> Roblox 계정 검색중...")
+    .setDescription(`입력한 닉네임: **${username}**\n잠시만 기다려주세요.`)
+    .setFooter({ text: `뎀넴의여유봇 • ${getKSTTime()}` });
 
-        const embedFound = new EmbedBuilder()
-          .setColor("#5661EA")
-          .setTitle("<:Link:1429725659013578813> Roblox 계정을 찾았습니다.")
-          .setDescription(`연동할 계정이 맞는지 확인해주세요.\n> 프로필: **${robloxUser.displayName} (@${robloxUser.name})**`)
-          .setFooter({ text: `뎀넴의여유봇 • ${getKSTTime()}` });
+  await interaction.reply({ embeds: [embedLoading], ephemeral: true });
+  await new Promise((r) => setTimeout(r, 5000)); // 5초 대기
 
-        return interaction.editReply({ embeds: [embedFound], components: [verifyRow] });
-      }
+  let robloxUser = null;
+  try {
+    const search = await fetch(
+      `https://users.roblox.com/v1/users/search?keyword=${encodeURIComponent(username)}&limit=1`
+    );
+    const data = await search.json();
+    if (data.data?.length) robloxUser = data.data[0];
+
+    if (!robloxUser) {
+      const res2 = await fetch("https://users.roblox.com/v1/usernames/users", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ usernames: [username] }),
+      });
+      const data2 = await res2.json();
+      if (data2.data?.length) robloxUser = data2.data[0];
+    }
+  } catch {
+    return interaction.editReply({ embeds: [errorEmbed("40401")], components: [] });
+  }
+
+  if (!robloxUser)
+    return interaction.editReply({ embeds: [errorEmbed("40401")], components: [] });
+
+  const verifyRow = new ActionRowBuilder().addComponents(
+    new ButtonBuilder()
+      .setCustomId(`verify_${robloxUser.id}`)
+      .setLabel("연동하기")
+      .setStyle(ButtonStyle.Success),
+    new ButtonBuilder()
+      .setCustomId("re_search")
+      .setLabel("다시 검색")
+      .setStyle(ButtonStyle.Danger)
+  );
+
+  const embedFound = new EmbedBuilder()
+    .setColor("#5661EA")
+    .setTitle("<:Link:1429725659013578813> Roblox 계정을 찾았습니다.")
+    .setDescription(
+      `연동할 계정이 맞는지 확인해주세요.\n> 프로필: **${robloxUser.displayName} (@${robloxUser.name})**`
+    )
+    .setFooter({ text: `뎀넴의여유봇 • ${getKSTTime()}` });
+
+  return interaction.editReply({ embeds: [embedFound], components: [verifyRow] });
+}
+
+// 🔁 다시 검색 버튼 (비공개 유지)
+if (interaction.isButton() && interaction.customId === "re_search") {
+  await interaction.deferUpdate();
+  const embed = new EmbedBuilder()
+    .setColor("#5661EA")
+    .setTitle("<a:Loading:1429705917267705937> 다시 검색을 시작합니다.")
+    .setDescription("새로운 Roblox 계정을 입력해주세요.")
+    .setFooter({ text: `뎀넴의여유봇 • ${getKSTTime()}` });
+  return interaction.followUp({ embeds: [embed], ephemeral: true });
+}
+
+// ✅ verify_ (인증번호 발급)
+if (interaction.isButton() && interaction.customId.startsWith("verify_")) {
+  await interaction.deferUpdate();
+  const robloxId = interaction.customId.split("_")[1];
+  const userId = interaction.user.id;
+  const verifyCode = Math.floor(10000 + Math.random() * 90000).toString();
+
+  const db = JSON.parse(fs.readFileSync(DATA_FILE, "utf8"));
+  db[userId] = { robloxId, verifyCode, verified: false };
+  fs.writeFileSync(DATA_FILE, JSON.stringify(db, null, 2));
+
+  const embed = new EmbedBuilder()
+    .setColor("#4d9802")
+    .setTitle("<a:Loading:1429705917267705937> Roblox 계정을 인증해주세요.")
+    .setDescription(
+      `연동할 계정의 프로필 소개에 아래 인증번호를 입력해주세요.\n\n> **${verifyCode}**\n> 프로필 소개란에 입력 후 [인증하기] 버튼을 눌러주세요.`
+    )
+    .setFooter({ text: `뎀넴의여유봇 • ${getKSTTime()}` });
+
+  const row = new ActionRowBuilder().addComponents(
+    new ButtonBuilder().setCustomId(`check_${userId}`).setLabel("인증하기").setStyle(ButtonStyle.Primary),
+    new ButtonBuilder().setCustomId(`regen_${userId}`).setLabel("인증번호 재발급").setStyle(ButtonStyle.Secondary)
+  );
+
+  return interaction.followUp({ embeds: [embed], components: [row], ephemeral: true });
+}
+
+// ✅ check_ (인증 확인 → 마지막 공개)
+if (interaction.isButton() && interaction.customId.startsWith("check_")) {
+  await interaction.deferUpdate();
+  const userId = interaction.customId.split("_")[1];
+  const db = JSON.parse(fs.readFileSync(DATA_FILE, "utf8"));
+  const entry = db[userId];
+  if (!entry)
+    return interaction.followUp({
+      content: "<:Warning:1429715991591387146> 세션이 만료되었습니다.",
+      ephemeral: true,
+    });
+
+  const res = await fetch(`https://users.roblox.com/v1/users/${entry.robloxId}`);
+  const robloxData = await res.json();
+
+  if (robloxData.description?.includes(entry.verifyCode)) {
+    entry.verified = true;
+    entry.robloxName = robloxData.name;
+    fs.writeFileSync(DATA_FILE, JSON.stringify(db, null, 2));
+
+    const member = await interaction.guild.members.fetch(userId);
+    for (const r of VERIFIED_ROLES) await member.roles.add(r).catch(() => {});
+
+    // ✅ 마지막 공개 임베드
+    const embedDone = new EmbedBuilder()
+      .setColor("#5661EA")
+      .setTitle("<:Finger:1429722343424659568> 인증이 완료되었습니다.")
+      .setDescription(
+        `<@${userId}>님, 로블록스 **${robloxData.name}** 계정으로 인증이 완료되었습니다.`
+      )
+      .setFooter({ text: `뎀넴의여유봇 • ${getKSTTime()}` });
+
+    // 공개 메시지
+    const channel = await client.channels.fetch(interaction.channelId);
+    await channel.send({ embeds: [embedDone] });
+
+    // 기존 메시지 정리
+    return interaction.followUp({
+      content: "<:Finger:1429722343424659568> 인증이 완료되었습니다!",
+      ephemeral: true,
+    });
+  } else {
+    return interaction.followUp({ embeds: [errorEmbed("40601")], ephemeral: true });
+  }
+}
 
       // ✅ /대량삭제
       if (interaction.isCommand() && interaction.commandName === "대량삭제") {
@@ -321,3 +453,4 @@ export async function setupAuth(client) {
     }
   });
 }
+
