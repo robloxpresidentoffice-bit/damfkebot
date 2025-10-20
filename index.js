@@ -118,7 +118,7 @@ client.on("messageCreate", async (message) => {
       })
       .setTitle("뎀넴의여유봇의 답변")
       .setDescription(answer)
-      .setColor(#e6d4a8)
+      .setColor("#e6d4a8")
       .setFooter({
         text: `뎀넴의여유봇 • ${getKSTTime()}`,
       });
@@ -310,4 +310,5 @@ client.on("interactionCreate", async (i) => {
 
 // ✅ 로그인
 client.login(DISCORD_TOKEN);
+
 
