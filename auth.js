@@ -245,39 +245,85 @@ export async function setupAuth(client) {
         await interaction.update({ embeds: [], components: [] });
       }
 
-      // 📩 관리자 DM에서 "?유저ID" 입력 시
-      if (
-        interaction.channel?.type === 1 &&
-        interaction.content?.startsWith("?")
-      ) {
-        const userId = interaction.content.replace("?", "").trim();
-        const data = JSON.parse(fs.readFileSync(DATA_FILE, "utf8"));
-        const entry = data[userId];
-        if (!entry)
-          return interaction.channel.send("해당 유저의 인증정보를 찾을 수 없습니다.");
+// 📩 관리자 DM에서 "?유저ID" 입력 시
+client.on("messageCreate", async (message) => {
+  try {
+    // DM이 아니면 무시
+    if (message.channel.type !== 1) return;
+    // 봇이 보낸 메시지 무시
+    if (message.author.bot) return;
+    // ?로 시작하지 않으면 무시
+    if (!message.content.startsWith("?")) return;
 
-        const user = await client.users.fetch(userId).catch(() => null);
-        const embed = new EmbedBuilder()
-          .setColor("#5661EA")
-          .setTitle(`${user?.username || "Unknown"} 님의 정보`)
-          .setDescription(
-            `> Discord : ${user?.tag || "알 수 없음"}\n> Roblox : ${
-              entry.robloxName
-            }\n> 소속 : (확인 중)\n> 직책 : (확인 중)`
-          )
-          .setFooter({ text: `뎀넴의여유봇 • ${getKSTTime()}` });
-
-        await interaction.channel.send({ embeds: [embed] });
-      }
-    } catch (err) {
-      console.error("인증 오류:", err);
-      try {
-        if (interaction.replied || interaction.deferred)
-          await interaction.editReply({ embeds: [errorEmbed("99999")], components: [] });
-      } catch (e) {}
+    const userId = message.content.replace("?", "").trim();
+    if (!/^\d+$/.test(userId)) {
+      return message.channel.send("⚠️ 올바른 Discord 사용자 ID를 입력해주세요.");
     }
-  });
-}
 
+    // authData.json 불러오기
+    const data = JSON.parse(fs.readFileSync(DATA_FILE, "utf8"));
+    const entry = data[userId];
+    if (!entry) {
+      return message.channel.send("❌ 해당 유저의 인증정보를 찾을 수 없습니다.");
+    }
 
+    // 유저 정보 가져오기
+    const user = await client.users.fetch(userId).catch(() => null);
+    const mainGuild = await client.guilds.fetch("1410625687580180582"); // 대통령실 서버
+    const member = await mainGuild.members.fetch(userId).catch(() => null);
 
+    // ✅ 소속 역할 목록
+    const roleMap = {
+      "1422944460219748362": "대한민국 국회",
+      "1422945355925819413": "대한민국 법원",
+      "1422942818938388510": "대한민국 감사원",
+      "1422945857275166741": "대한민국 헌법재판소",
+      "1422946396100890745": "대한민국 경찰청",
+      "1422947629645430804": "대한민국 국방부",
+      "1422945989215522817": "대한민국 과학기술정보통신부",
+      "1422948537293078528": "대한민국 교육부",
+    };
+
+    let roleName = "없음";
+    if (member) {
+      const foundRole = Object.entries(roleMap).find(([id]) =>
+        member.roles.cache.has(id)
+      );
+      if (foundRole) {
+        // 'ㅣ' 이전까지만 출력
+        roleName = foundRole[1].split("ㅣ")[0];
+      }
+    }
+
+    // ✅ 닉네임에서 직책 추출 ([감사원장] hiku → 감사원장)
+    let title = "없음";
+    if (member?.nickname && member.nickname.includes("[")) {
+      const match = member.nickname.match(/\[(.*?)\]/);
+      if (match) title = match[1];
+    }
+
+    // ✅ 결과 임베드 생성
+    const embed = new EmbedBuilder()
+      .setColor("#5661EA")
+      .setTitle(`${user?.username || "Unknown"} 님의 정보`)
+      .setDescription(
+        `> Discord : ${user?.tag || "알 수 없음"}\n` +
+          `> Roblox : ${entry.robloxName}\n` +
+          `> 소속 : ${roleName}\n` +
+          `> 직책 : ${title}`
+      )
+      .setFooter({ text: `뎀넴의여유봇 • ${getKSTTime()}` });
+
+    await message.channel.send({ embeds: [embed] });
+  } catch (err) {
+    console.error("❌ DM 조회 오류:", err);
+    const error = new EmbedBuilder()
+      .setColor("#ffc443")
+      .setTitle("<:Warning:1429715991591387146> 오류가 발생했어요.")
+      .setDescription(
+        `다시 시도해 주세요.\n\n> 오류 : **DM 조회 실패**\n> 코드 : 70001\n> 조치 : \`관리자 문의\``
+      )
+      .setFooter({ text: `뎀넴의여유봇 • ${getKSTTime()}` });
+    await message.channel.send({ embeds: [error] });
+  }
+});
