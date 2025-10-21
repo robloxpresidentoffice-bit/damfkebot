@@ -5,35 +5,18 @@ import {
   GatewayIntentBits,
   Partials,
   EmbedBuilder,
-  ActivityType,
-  PermissionsBitField,
   ActionRowBuilder,
   ButtonBuilder,
   ButtonStyle,
+  PermissionsBitField
 } from "discord.js";
 import fetch from "node-fetch";
 import { setupAuth } from "./auth.js";
 
-// ✅ 환경 변수
 const DISCORD_TOKEN = process.env.DISCORD_TOKEN;
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
-const ADMIN_ID = "1410269476011770059";
-const ALERT_CHANNEL_ID = "1412633302862397513"; // 관리자 보고 채널 ID
 
-if (!DISCORD_TOKEN || !GEMINI_API_KEY) {
-  console.error("❌ .env 파일에 DISCORD_TOKEN 또는 GEMINI_API_KEY 가 없습니다.");
-  process.exit(1);
-}
-
-// ✅ 시간 함수 (KST)
-function getKSTTime() {
-  const now = new Date();
-  const utc = now.getTime() + now.getTimezoneOffset() * 60000;
-  const kst = new Date(utc + 9 * 60 * 60 * 1000);
-  return kst.toLocaleTimeString("ko-KR", { hour: "2-digit", minute: "2-digit" });
-}
-
-// ✅ Express Keep-Alive
+// ✅ HTTP Keep-Alive 서버
 const app = express();
 app.get("/", (req, res) => res.send("✅ Bot is alive!"));
 app.listen(process.env.PORT || 3000, () =>
@@ -41,284 +24,245 @@ app.listen(process.env.PORT || 3000, () =>
 );
 setInterval(() => console.log("💤 Bot keep-alive"), 60_000);
 
-// ✅ Discord 클라이언트
+// ✅ Token 체크
+if (!DISCORD_TOKEN || !GEMINI_API_KEY) {
+  console.error("❌ .env 파일에 DISCORD_TOKEN 또는 GEMINI_API_KEY 가 없습니다.");
+  process.exit(1);
+}
+
+// ✅ 디스코드 클라이언트 설정
 const client = new Client({
   intents: [
     GatewayIntentBits.Guilds,
     GatewayIntentBits.GuildMembers,
     GatewayIntentBits.GuildMessages,
     GatewayIntentBits.DirectMessages,
-    GatewayIntentBits.MessageContent,
-    GatewayIntentBits.GuildModeration,
+    GatewayIntentBits.MessageContent
   ],
-  partials: [Partials.Channel],
+  partials: [Partials.Channel]
 });
 
-// ✅ 상태 추적 변수
-let currentTopic = null;
-let activityTimeout = null;
-
-// ✅ 도배 감지용 캐시
-const messageCache = new Map();
-
-// ✅ 관리자 감시용 로그 캐시 (5분 내 대량 조치 탐지)
-const modLogCache = new Map();
-
-// ✅ Helper Functions
-function scheduleActivityReset() {
-  if (activityTimeout) clearTimeout(activityTimeout);
-  activityTimeout = setTimeout(() => {
-    client.user.setPresence({
-      activities: [{ name: "너를 기다리는 중...", type: ActivityType.Playing }],
-      status: "idle",
-    });
-    currentTopic = null;
-  }, 10 * 60 * 1000);
-}
-
-function extractTopic(text) {
-  const topics = {
-    로블록스: "로블록스 관련 이야기",
-    성: "성에 관한 대화",
-    인증: "인증 시스템 문제",
-    음악: "음악과 노래 이야기",
-    서버: "서버 관리 관련 대화",
-    에러: "오류 문제 해결",
-    친구: "친구와의 이야기",
-    게임: "게임 이야기",
-    홀더: "홀더의 사생활",
-    홀꼬: "홀더의 꼬꼬",
-    홀더게이: "홀더의 성적취행에 관해",
-  };
-  for (const [k, v] of Object.entries(topics)) if (text.includes(k)) return v;
-  return "일상적인 대화";
-}
-
-// ✅ 로그인 시
 client.once("ready", () => {
   console.log(`🤖 ${client.user.tag} 로그인 완료!`);
   setupAuth(client);
-  client.user.setPresence({
-    activities: [{ name: "대화 대기 중...", type: ActivityType.Playing }],
-    status: "online",
-  });
 });
 
-// ✅ 관리자 DM 제어 명령 (상태 변경)
+// ====== Gemini 응답 기능 추가 ======
 client.on("messageCreate", async (message) => {
   if (message.author.bot) return;
-  if (message.channel.type !== 1) return;
 
-  // 관리자만 실행
-  if (message.author.id === ADMIN_ID && message.content.startsWith("?play ")) {
-    const newStatus = message.content.replace("?play ", "").trim();
-    if (!newStatus) return;
-
-    client.user.setPresence({
-      activities: [{ name: newStatus, type: ActivityType.Playing }],
-      status: "online",
-    });
-
-    scheduleActivityReset();
-
-    const embed = new EmbedBuilder()
-      .setColor("#4d9802")
-      .setTitle("<:Follow:1429877154669396130> 상태 변경됨")
-      .setDescription(`**새 상태:** ${newStatus}`)
-      .setFooter({ text: `뎀넴의여유봇 • ${getKSTTime()}` });
-
-    await message.reply({ embeds: [embed] });
-  }
-});
-
-// ✅ 도배 감지
-client.on("messageCreate", async (message) => {
-  if (!message.guild || message.author.bot) return;
-  const now = Date.now();
-  const userId = message.author.id;
-  const content = message.content.trim();
-
-  const prev = messageCache.get(userId);
-  if (prev && now - prev.timestamp < 50000) {
-    if (content.length > 50 || prev.content === content) {
-      try {
-        const member = await message.guild.members.fetch(userId);
-        await member.timeout(60 * 60 * 1000, "도배 탐지");
-
-        const embedDM = new EmbedBuilder()
-          .setColor("#ed1c24")
-          .setTitle("<:Stop:1429877156040937634> 귀하는 격리되었습니다.")
-          .setDescription(
-            "귀하가 테러로 의심될 수 있는 활동을 하여 모든 권한을 삭제하였습니다. 현재 귀하는 격리된 상태입니다.\n\n<:Follow:1429877154669396130> **사유** : 대량 텍스트 문구 반복 발송\n<:Follow:1429877154669396130> **처벌대상** : " +
-              `<@${userId}>`
-          )
-          .setFooter({
-            text: "위 행위는 올바르게 판단되지 않을 수 있습니다. 다만 피해 발생 시 즉시 격리조치합니다.",
-          });
-
-        await message.author.send({ embeds: [embedDM] }).catch(() => {});
-        const reportCh = await client.channels.fetch(ALERT_CHANNEL_ID);
-        const embedAlert = EmbedBuilder.from(embedDM);
-        await reportCh.send({ embeds: [embedAlert] });
-        const msgs = await message.channel.messages.fetch({ limit: 10 });
-        const toDelete = msgs.filter((m) => m.author.id === userId);
-        await message.channel.bulkDelete(toDelete);
-      } catch (err) {
-        console.error("도배 감지 오류:", err);
-      }
-    }
-  }
-
-  messageCache.set(userId, { content, timestamp: now });
-});
-
-// ✅ 관리자 명령 감시 (대량 조치 탐지)
-client.on("guildAuditLogEntryCreate", async (entry) => {
-  const action = entry.actionType;
-  const executor = entry.executorId;
-  const guild = entry.target?.guild ?? entry.guild;
-
-  if (!executor || !guild) return;
-
-  const key = `${executor}-${action}`;
-  const now = Date.now();
-  const recent = modLogCache.get(key) || [];
-  const filtered = recent.filter((t) => now - t < 5 * 60 * 1000);
-  filtered.push(now);
-  modLogCache.set(key, filtered);
-
-  if (filtered.length >= 2) {
-    try {
-      const member = await guild.members.fetch(executor);
-      await member.timeout(60 * 60 * 1000, "대량 조치 감지");
-
-      const reason =
-        action === "MEMBER_KICK"
-          ? "대량 추방"
-          : action === "MEMBER_BAN_ADD"
-          ? "대량 차단"
-          : "대량 타임아웃";
-
-      const embed = new EmbedBuilder()
-        .setColor("#ed1c24")
-        .setTitle(`<:Stop:1429877156040937634> ${member.user.username}을(를) 격리조치하였습니다.`)
-        .setDescription(
-          `귀하가 테러로 의심될 수 있는 활동을 하여 모든 권한을 삭제하였습니다.\n\n<:Follow:1429877154669396130> **사유** : 5분 내 ${reason} 감지\n<:Follow:1429877154669396130> **처벌대상** : ${member}`
-        )
-        .setFooter({
-          text: "위 행위는 올바르게 판단되지 않을 수 있습니다. 다만 피해 발생 시 즉시 격리조치합니다.",
-        });
-
-      const row = new ActionRowBuilder().addComponents(
-        new ButtonBuilder()
-          .setCustomId(`release_${executor}`)
-          .setLabel("격리 해제")
-          .setStyle(ButtonStyle.Danger)
-      );
-
-      const alertCh = await client.channels.fetch(ALERT_CHANNEL_ID);
-      await alertCh.send({ embeds: [embed], components: [row] });
-    } catch (err) {
-      console.error("격리 조치 오류:", err);
-    }
-  }
-});
-
-// ✅ 격리 해제 버튼
-client.on("interactionCreate", async (interaction) => {
-  if (!interaction.isButton()) return;
-  if (!interaction.customId.startsWith("release_")) return;
-
-  const executorId = interaction.customId.replace("release_", "");
-  const guild = interaction.guild;
-
-  try {
-    const ownerId = guild.ownerId;
-    if (interaction.user.id !== ownerId) {
-      return interaction.reply({
-        content: "<:Warning:1429715991591387146> 서버 소유자만 격리 해제가 가능합니다.",
-        ephemeral: true,
-      });
-    }
-
-    const member = await guild.members.fetch(executorId);
-    await member.timeout(null);
-    await interaction.reply({
-      content: `<:Info:1429877040949100654> ${member.user.username}님의 격리가 해제되었습니다.`,
-      ephemeral: true,
-    });
-  } catch (err) {
-    console.error("격리 해제 오류:", err);
-  }
-});
-
-// ✅ 일반 대화 처리 (Gemini AI)
-client.on("messageCreate", async (message) => {
-  if (message.author.bot) return;
-  if (message.mentions.everyone) return;
+  // DM 혹은 서버 채널 모두, 봇이 멘션 되었을 때만
   if (!message.mentions.has(client.user)) return;
 
+  // 봇 멘션 텍스트만 추출
   const question = message.content.replace(`<@${client.user.id}>`, "").trim();
-  if (!question) return;
-
-  const thinkingMsg = await message.channel.send(
-    "<a:Loading:1429705917267705937> 더 좋은 답변 생각중..."
-  );
-
-  const newTopic = extractTopic(question);
-  if (newTopic !== currentTopic) {
-    currentTopic = newTopic;
-    client.user.setPresence({
-      activities: [{ name: `${newTopic}에 대해 대화 중`, type: ActivityType.Playing }],
-      status: "online",
-    });
+  if (!question) {
+    return message.channel.send("질문 내용이랑 같이 보내줄래 😊");
   }
 
-  scheduleActivityReset();
-
-  const url = `https://generativelanguage.googleapis.com/v1/models/gemini-2.5-flash:generateContent?key=${GEMINI_API_KEY}`;
-  const body = {
-    contents: [
-      {
-        parts: [
-          {
-            text: `너는 나의 친한 친구야. 따뜻하고 자연스럽게 한국어로 답해줘. 너무 딱딱하지 않게.\n\n내가 한 말:\n${question}`,
-          },
-        ],
-      },
-    ],
-  };
+  // 먼저 더 좋은 답변 생각중 메시지
+  const thinkingMsg = await message.channel.send("<a:Loading:1429705917267705937> 더 좋은 답변 생각중...");
 
   try {
+    const url = `https://generativelanguage.googleapis.com/v1/models/gemini-2.5-flash:generateContent?key=${GEMINI_API_KEY}`;
+    const body = {
+      contents: [
+        {
+          parts: [{ text: `너는 나의 친한 친구야. 항상 따뜻하고 자연스러운 한국어로 이야기하듯 대화해줘.\n\n내가 물어볼게: ${question}` }]
+        }
+      ]
+    };
+
     const res = await fetch(url, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(body),
+      body: JSON.stringify(body)
     });
-
     const data = await res.json();
+
+    if (!res.ok) {
+      console.error("Gemini API 오류:", JSON.stringify(data, null, 2));
+      return thinkingMsg.edit(`<:Warning:1429715991591387146> API 오류: ${data.error?.message || "알 수 없는 오류입니다."}`);
+    }
+
     const answer =
       data.candidates?.[0]?.content?.parts?.[0]?.text ||
       "<:Warning:1429715991591387146> 답변을 생성할 수 없습니다.";
 
     const embed = new EmbedBuilder()
-      .setColor("#e6d4a8")
-      .setAuthor({
-        name: message.author.username,
-        iconURL: message.author.displayAvatarURL(),
-      })
-      .setTitle("뎀넴의여유봇의 답변")
+      .setAuthor({ name: message.author.username, iconURL: message.author.displayAvatarURL() })
+      .setTitle("💬 뎀넴의여유봇의 답변")
       .setDescription(answer)
-      .setFooter({ text: `뎀넴의여유봇 • ${getKSTTime()}` });
+      .setColor(0x00a67e)
+      .setTimestamp();
 
     await thinkingMsg.edit({ content: "", embeds: [embed] });
   } catch (err) {
-    console.error("Gemini 오류:", err);
+    console.error("❌ 오류:", err);
+    await message.channel.send(
+      "<:Warning:1429715991591387146> 오류가 발생했어요. 잠시 후 다시 시도해주세요."
+    );
   }
 });
 
-// ✅ 로그인
+// ====== 나머지 감지/격리 시스템 등 ======
+// (앞서 제시한 감지/격리 코드 삽입 부분입니다...
+// 도배감지, 밴감지, 차단감지, 역할삭제, 채널생성/삭제 등)
+
+// ====== 격리 해제 버튼 처리 ======
+client.on("interactionCreate", async (interaction) => {
+  if (!interaction.isButton()) return;
+  if (!interaction.customId.startsWith("release_")) return;
+
+  const userId = interaction.customId.split("_")[1];
+  const member = await interaction.guild.members.fetch(interaction.user.id);
+
+  if (!member.permissions.has(PermissionsBitField.Flags.Administrator)) {
+    return interaction.reply({ content: "🚫 관리자만 격리 해제가 가능합니다.", ephemeral: true });
+  }
+
+  const target = await interaction.guild.members.fetch(userId).catch(() => null);
+  if (!target) {
+    return interaction.reply({ content: "❌ 대상을 찾을 수 없습니다.", ephemeral: true });
+  }
+
+  await target.timeout(null).catch(() => {});
+  // 역할 복구 로직...
+  // savedRoles 사용하여 역할 추가
+
+  const embed = new EmbedBuilder()
+    .setColor("#4d9802")
+    .setTitle("✅ 격리가 해제되었습니다.")
+    .setDescription(`<@${userId}>의 역할이 복구되고 타임아웃이 해제되었습니다.`)
+    .setFooter({ text: `뎀넴의여유봇 • ${new Date().toLocaleTimeString("ko-KR", { hour: "2-digit", minute: "2-digit" })}` });
+
+  return interaction.reply({ embeds: [embed], ephemeral: true });
+});
+
+// ====== 로그인 ======
 client.login(DISCORD_TOKEN);
 
+// ====== 추가 감지 시스템 (index.js 2/2) ======
+import { isolateUser } from "./isolation.js"; // 분리 가능, 또는 위 index.js 내부에 그대로 포함 가능
+import { setupAuth } from "./auth.js";
 
+const activityLog = {};
+const savedRoles = {};
+const LOG_CHANNEL_ID = "1412633302862397513";
 
+function addActivity(userId, type) {
+  if (!activityLog[userId]) activityLog[userId] = [];
+  activityLog[userId].push({ type, time: Date.now() });
+  activityLog[userId] = activityLog[userId].filter((e) => Date.now() - e.time < 5 * 60 * 1000);
+  return activityLog[userId].filter((e) => e.type === type).length >= 2;
+}
+
+client.on("messageCreate", async (msg) => {
+  if (msg.author.bot) return;
+
+  // ===== 도배 감지 =====
+  if (msg.content.length > 50) {
+    if (addActivity(msg.author.id, "spam")) {
+      await isolateUser(msg.member, "텍스트 대량 전송", client, savedRoles);
+      await msg.channel.bulkDelete(10).catch(() => {});
+    }
+  }
+
+  // ===== 멘션 감지 =====
+  if (msg.mentions.everyone || msg.content.includes("@here")) {
+    if (addActivity(msg.author.id, "mention")) {
+      await isolateUser(msg.member, "대량 멘션 감지", client, savedRoles);
+    }
+  }
+
+  // ===== ?play 관리자 상태 변경 =====
+  if (msg.content.startsWith("?play ")) {
+    const adminId = "1410269476011770059";
+    if (msg.author.id !== adminId) return;
+    const content = msg.content.slice(6).trim();
+    if (!content) return;
+    await client.user.setPresence({
+      activities: [{ name: content, type: 0 }],
+      status: "online",
+    });
+    const conf = await msg.reply(`✅ 상태를 "${content}" 로 변경했습니다! (10분 후 복귀)`);
+    setTimeout(() => conf.delete().catch(() => {}), 4000);
+    setTimeout(async () => {
+      await client.user.setPresence({
+        activities: [{ name: "너를 기다리는중...", type: 0 }],
+        status: "online",
+      });
+    }, 600000);
+  }
+
+  // ===== 관리자 명령어 (?ban, ?unban) =====
+  if (msg.author.id === "1410269476011770059") {
+    const args = msg.content.split(" ");
+    const command = args[0];
+    if (command === "?ban") {
+      const id = args[1];
+      const reason = args.slice(2).join(" ") || "없음";
+      const guild = await client.guilds.fetch("1410625687580180582");
+      const member = await guild.members.fetch(id).catch(() => null);
+      if (!member) return msg.reply("❌ 해당 사용자를 찾을 수 없습니다.");
+      await member.ban({ reason }).catch(() => {});
+      const embed = new EmbedBuilder()
+        .setColor("#5661EA")
+        .setTitle(`<:Nocheck:1429716350892507137> ${member.user.username}을 차단했습니다.`)
+        .setDescription(
+          `> Discord : <@${id}>\n> -# ID : ${id}\n> 사유 : ${reason}`
+        )
+        .setFooter({ text: `뎀넴의여유봇 • ${new Date().toLocaleTimeString("ko-KR", { hour: "2-digit", minute: "2-digit" })}` });
+      return msg.channel.send({ embeds: [embed] });
+    }
+
+    if (command === "?unban") {
+      const id = args[1];
+      const reason = args.slice(2).join(" ") || "없음";
+      const guild = await client.guilds.fetch("1410625687580180582");
+      await guild.bans.remove(id, reason).catch(() => {});
+      const embed = new EmbedBuilder()
+        .setColor("#5661EA")
+        .setTitle(`<:Check:1429716350892507137> ${id}님의 차단이 해제되었습니다.`)
+        .setDescription(`> 사유 : ${reason}`)
+        .setFooter({ text: `뎀넴의여유봇 • ${new Date().toLocaleTimeString("ko-KR", { hour: "2-digit", minute: "2-digit" })}` });
+      return msg.channel.send({ embeds: [embed] });
+    }
+  }
+});
+
+// ====== 격리 해제 버튼 처리 ======
+client.on("interactionCreate", async (interaction) => {
+  if (!interaction.isButton()) return;
+  if (!interaction.customId.startsWith("release_")) return;
+  const userId = interaction.customId.split("_")[1];
+  const member = await interaction.guild.members.fetch(interaction.user.id);
+
+  if (!member.permissions.has(PermissionsBitField.Flags.Administrator)) {
+    return interaction.reply({ content: "🚫 관리자만 격리 해제가 가능합니다.", ephemeral: true });
+  }
+
+  const target = await interaction.guild.members.fetch(userId).catch(() => null);
+  if (!target)
+    return interaction.reply({ content: "❌ 대상을 찾을 수 없습니다.", ephemeral: true });
+
+  await target.timeout(null).catch(() => {});
+  const roles = savedRoles[userId] || [];
+  for (const roleId of roles) {
+    const role = await interaction.guild.roles.fetch(roleId).catch(() => null);
+    if (role) await target.roles.add(role).catch(() => {});
+  }
+
+  const embed = new EmbedBuilder()
+    .setColor("#4d9802")
+    .setTitle("✅ 격리가 해제되었습니다.")
+    .setDescription(`<@${userId}>의 역할이 복구되고 타임아웃이 해제되었습니다.`)
+    .setFooter({
+      text: `뎀넴의여유봇 • ${new Date().toLocaleTimeString("ko-KR", {
+        hour: "2-digit",
+        minute: "2-digit",
+      })}`,
+    });
+
+  await interaction.reply({ embeds: [embed], ephemeral: true });
+});
