@@ -139,9 +139,9 @@ if (interaction.isButton() && interaction.customId === "deny_auth") {
   return interaction.followUp({ embeds: [embed], ephemeral: true });
 }
 
-// 🧩 “연동하기” 버튼 → 모달 열기 (비공개 유지)
+// 🧩 “연동하기” 버튼 → 모달 열기 (비공개 유지, 오류 없는 버전)
 if (interaction.isButton() && interaction.customId === "start_auth") {
-  await interaction.deferUpdate();
+  // deferUpdate() 절대 호출하지 않음!
   const modal = new ModalBuilder()
     .setCustomId("roblox_modal")
     .setTitle("Roblox 계정 연동하기");
@@ -152,9 +152,12 @@ if (interaction.isButton() && interaction.customId === "start_auth") {
     .setStyle(TextInputStyle.Short)
     .setRequired(true);
 
-  modal.addComponents(new ActionRowBuilder().addComponents(input));
+  const actionRow = new ActionRowBuilder().addComponents(input);
+  modal.addComponents(actionRow);
+
   return interaction.showModal(modal);
 }
+
 
 // 🧾 모달 제출 → Roblox 계정 검색
 if (interaction.isModalSubmit() && interaction.customId === "roblox_modal") {
@@ -453,4 +456,5 @@ if (interaction.isButton() && interaction.customId.startsWith("check_")) {
     }
   });
 }
+
 
