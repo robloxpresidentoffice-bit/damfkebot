@@ -105,7 +105,7 @@ client.on("messageCreate", async (message) => {
       })
       .setTitle("뎀넴의여유봇의 답변")
       .setDescription(answer)
-      .setColor(0x00a67e)
+      .setColor("#d4ba81")
       .setTimestamp();
 
     await thinkingMsg.edit({ content: "", embeds: [embed] });
@@ -301,4 +301,5 @@ client.once("ready", async () => {
 });
 
 client.login(TOKEN);
+
 
