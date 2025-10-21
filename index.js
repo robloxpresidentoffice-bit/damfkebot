@@ -45,30 +45,6 @@ const client = new Client({
   partials: [Partials.Channel, Partials.Message, Partials.GuildMember],
 });
 
-client.on("messageCreate", async (message) => {
-  if (message.author.bot) return;
-
-  // 봇 멘션을 포함하지 않으면 무시
-  if (!message.mentions.has(client.user)) return;
-
-  const content = message.content.replace(`<@${client.user.id}>`, "").trim();
-
-  // “학습해” 명령 처리
-  if (content.endsWith("학습해")) {
-    const topic = content.replace("학습해", "").trim();
-    if (!topic) {
-      return message.channel.send("무엇을 학습할지 알려줘 😊");
-    }
-
-    // 상태 업데이트
-    await client.user.setPresence({
-      activities: [{ name: `${topic} 학습중`, type: ActivityType.Playing }],
-      status: "online",
-    });
-
-    return message.channel.send(`✅ 이제 "${topic}"에 대해 학습중이에요!`);
-  }
-
 // =======================================
 // 💬 Gemini 대화 & 학습 기능 (멘션 기반 + 자동 복귀)
 // =======================================
@@ -82,14 +58,14 @@ client.on("messageCreate", async (message) => {
 
   const content = message.content.replace(`<@${client.user.id}>`, "").trim();
   if (!content) {
-    return message.channel.send("질문 내용과 함께 적어줘 😊");
+    return message.channel.send("질문 내용과 함께 적어줘 :D");
   }
 
   // ✅ “학습해” 명령 처리 (플레이중 업데이트)
   if (content.endsWith("학습해")) {
     const topic = content.replace("학습해", "").trim();
     if (!topic) {
-      return message.channel.send("무엇을 학습할지 알려줘 😊");
+      return message.channel.send("무엇을 학습할지 알려줘");
     }
 
     // 상태 업데이트
@@ -108,8 +84,7 @@ client.on("messageCreate", async (message) => {
       console.log("🕒 활동 없음 → 상태 자동 복귀 완료");
     }, 10 * 60 * 1000); // 10분 (600,000ms)
 
-    // 메시지 보내지 않게 코드 제거됨
-    return;
+    return message.channel.send(`이제 "${topic}"에 대해 학습중이에요!`);
   }
 
   // ✅ 일반 대화 (Gemini)
@@ -128,7 +103,7 @@ client.on("messageCreate", async (message) => {
           parts: [
             {
               text: `
-너는 나의 친한 친구야. 😊
+너는 나의 친한 친구야.
 항상 따뜻하고 자연스러운 한국어로, 친구처럼 대화하듯 답변해줘.
 지나치게 격식 차리지 말고, 유머나 감정도 자연스럽게 표현해도 돼.
 내가 궁금한 건 이거야: ${content}
@@ -167,7 +142,7 @@ client.on("messageCreate", async (message) => {
         name: message.author.username,
         iconURL: message.author.displayAvatarURL(),
       })
-      .setTitle("💬 뎀넴의여유봇의 답변")
+      .setTitle("뎀넴의여유봇의 답변")
       .setDescription(answer)
       .setColor("#d4ba81")
       .setTimestamp();
@@ -370,6 +345,7 @@ client.once("clientReady", async () => {
 });
 
 client.login(TOKEN);
+
 
 
 
