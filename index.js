@@ -257,6 +257,7 @@ client.on("messageCreate", async (msg) => {
   // 도배 감지
   if (msg.content.length > 100) {
     if (addActivity(msg.author.id, "spam")) {
+      await msg.delete().catch(() => {}); // 도배 메시지 삭제
       await isolateUser(msg.member, "텍스트 대량 전송", client);
     }
   }
@@ -462,6 +463,7 @@ client.on("messageCreate", async (msg) => {
 });
 
 client.login(TOKEN);
+
 
 
 
