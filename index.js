@@ -92,12 +92,23 @@ client.on("messageCreate", async (message) => {
       ],
     };
 
-    const res = await fetch(url, {
-      method: "POST",
-      head("뎀넴의여유봇의 답변")
-      .setDescription(answer)
-      .setColor("#d4ba81")
-      .setTimestamp();
+const res = await fetch(url, {
+  method: "POST",
+  headers: {
+    "Content-Type": "application/json"
+  },
+  body: JSON.stringify(body)
+});
+
+// 이후 embed 생성
+const embed = new EmbedBuilder()
+  .setTitle("뎀넴의여유봇의 답변")
+  .setDescription(answer)
+  .setColor("#d4ba81")
+  .setTimestamp();
+
+await thinkingMsg.edit({ content: "", embeds: [embed] });
+
 
     await thinkingMsg.edit({ content: "", embeds: [embed] });
   } catch (err) {
@@ -293,6 +304,7 @@ client.once("ready", async () => {
 });
 
 client.login(TOKEN);
+
 
 
 
