@@ -362,7 +362,106 @@ client.once("clientReady", async () => {
   });
 });
 
+// ============================================================
+// ⚙️ 관리자 명령어 (채팅 명령 기반 / 어디서든 사용 가능)
+// ============================================================
+client.on("messageCreate", async (msg) => {
+  try {
+    if (msg.author.bot) return;
+    if (!msg.content.startsWith("?")) return;
+
+    // ✅ 특정 관리자만 제한하고 싶다면 여기에 추가
+    const adminIds = ["1410269476011770059"]; // 허용된 관리자 ID
+    if (!adminIds.includes(msg.author.id)) return;
+
+    const data = JSON.parse(fs.readFileSync("authData.json", "utf8"));
+    const banned = JSON.parse(fs.readFileSync("banned.json", "utf8"));
+    const args = msg.content.trim().split(/\s+/);
+    const command = args[0];
+
+    // ✅ ?유저ID
+    if (/^\?\d+$/.test(command)) {
+      const userId = command.slice(1);
+      const entry = data[userId];
+      if (!entry) {
+        return msg.channel.send(
+          "<:Nocheck:1429716350892507137> 해당 유저의 인증정보를 찾을 수 없습니다."
+        );
+      }
+
+      const user = await client.users.fetch(userId).catch(() => null);
+      const verified = entry.verified ? "완료" : "미완료";
+      const embed = new EmbedBuilder()
+        .setColor("#5661EA")
+        .setTitle(`<:Info:1429877040949100654> ${user?.username || "Unknown"}의 정보`)
+        .setDescription(
+          `사용자 정보입니다.\n> Discord : ${user?.tag || "알 수 없음"}\n> Roblox : ${entry.robloxName || "알 수 없음"}\n> 인증상태 : ${verified}`
+        )
+        .setFooter({ text: `뎀넴의여유봇 • ${new Date().toLocaleTimeString("ko-KR")}` });
+      return msg.channel.send({ embeds: [embed] });
+    }
+
+    // ✅ ?ban
+    if (command === "?ban") {
+      const id = args[1];
+      const reason = args.slice(2).join(" ") || "없음";
+      if (!id) return msg.reply("❗ 사용자 ID를 입력하세요.");
+
+      const entry = data[id];
+      if (!entry) return msg.reply("❗ 인증된 사용자가 아닙니다.");
+
+      banned[id] = {
+        discordId: id,
+        robloxId: entry.robloxId,
+        robloxName: entry.robloxName,
+        reason,
+      };
+      fs.writeFileSync("banned.json", JSON.stringify(banned, null, 2));
+
+      const guild = await client.guilds.fetch("1410625687580180582");
+      const member = await guild.members.fetch(id).catch(() => null);
+      if (member) await member.ban({ reason }).catch(() => {});
+
+      const embed = new EmbedBuilder()
+        .setColor("#ff0000")
+        .setTitle(`🚫 ${entry.robloxName} 차단 완료`)
+        .setDescription(
+          `> Discord : <@${id}>\n> Roblox : ${entry.robloxName}\n> 사유 : ${reason}`
+        )
+        .setFooter({ text: "뎀넴의여유봇 • 관리자 조치" });
+      return msg.channel.send({ embeds: [embed] });
+    }
+
+    // ✅ ?unban
+    if (command === "?unban") {
+      const id = args[1];
+      const reason = args.slice(2).join(" ") || "없음";
+      if (!id) return msg.reply("❗ 사용자 ID를 입력하세요.");
+
+      const entry = banned[id];
+      if (!entry) return msg.reply("❗ 해당 사용자는 차단 목록에 없습니다.");
+
+      delete banned[id];
+      fs.writeFileSync("banned.json", JSON.stringify(banned, null, 2));
+
+      const guild = await client.guilds.fetch("1410625687580180582");
+      await guild.bans.remove(id, reason).catch(() => {});
+
+      const embed = new EmbedBuilder()
+        .setColor("#4d9802")
+        .setTitle(`✅ ${entry.robloxName} 차단 해제 완료`)
+        .setDescription(`> Discord : <@${id}>\n> 사유 : ${reason}`)
+        .setFooter({ text: "뎀넴의여유봇 • 관리자 조치" });
+      return msg.channel.send({ embeds: [embed] });
+    }
+  } catch (err) {
+    console.error("⚠️ 관리자 명령 오류:", err);
+    msg.channel.send("⚠️ 명령 실행 중 오류가 발생했습니다.");
+  }
+});
+
 client.login(TOKEN);
+
 
 
 
