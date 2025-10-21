@@ -12,6 +12,7 @@ import {
   ButtonBuilder,
   ButtonStyle,
   PermissionsBitField,
+  ActivityType,
 } from "discord.js";
 import fetch from "node-fetch";
 import { setupAuth } from "./auth.js";
@@ -61,65 +62,62 @@ client.on("messageCreate", async (message) => {
 
     // 상태 업데이트
     await client.user.setPresence({
-      activities: [{ name: `${topic} 학습중`, type: 0 }], // type 0 = Playing
+      activities: [{ name: `${topic} 학습중`, type: ActivityType.Playing }],
       status: "online",
     });
 
     return message.channel.send(`✅ 이제 "${topic}"에 대해 학습중이에요!`);
   }
 
-// … 위 코드 동일 …
+  // ✨ Gemini 대화 응답
+  const question = content.trim();
+  if (!question) {
+    return message.channel.send("질문 내용이랑 같이 보내줄래 😊");
+  }
 
-// ✨ Gemini 대화 응답
-const question = content.trim();
-if (!question) {
-  return message.channel.send("질문 내용이랑 같이 보내줄래 😊");
-}
-
-const thinkingMsg = await message.channel.send(
-  "<a:Loading:1429705917267705937> 더 좋은 답변 생각중..."
-);
-
-try {
-  const url = `https://generativelanguage.googleapis.com/v1/models/gemini-2.5-flash:generateContent?key=${GEMINI_API_KEY}`;
-  const body = {
-    contents: [
-      {
-        parts: [
-          {
-            text: `너는 나의 친한 친구야. 항상 따뜻하고 자연스러운 한국어로 이야기하듯 대화해줘.\n\n내가 물어볼게: ${question}`,
-          },
-        ],
-      },
-    ],
-  };
-
-  const res = await fetch(url, {
-  method: "POST",
-  headers: {
-    "Content-Type": "application/json"
-  },
-  body: JSON.stringify(body)
-});
-
-const data = await res.json();
-const answer = data.contents?.[0]?.parts?.[0]?.text ?? "죄송하지만 답변을 받아오지 못했어요.";
-
-const embed = new EmbedBuilder()
-  .setTitle("뎀넴의여유봇의 답변")
-  .setDescription(answer)
-  .setColor("#d4ba81")
-  .setTimestamp();
-
-await thinkingMsg.edit({ content: "", embeds: [embed] });
-} catch (err) {
-  console.error("❌ 오류:", err);
-  await message.channel.send(
-    "<:Warning:1429715991591387146> 오류가 발생했어요. 잠시 후 다시 시도해주세요."
+  const thinkingMsg = await message.channel.send(
+    "<a:Loading:1429705917267705937> 더 좋은 답변 생각중..."
   );
-}
 
+  try {
+    const url = `https://generativelanguage.googleapis.com/v1/models/gemini-2.5-flash:generateContent?key=${GEMINI_API_KEY}`;
+    const body = {
+      contents: [
+        {
+          parts: [
+            {
+              text: `너는 나의 친한 친구야. 항상 따뜻하고 자연스러운 한국어로 이야기하듯 대화해줘.\n\n내가 물어볼게: ${question}`,
+            },
+          ],
+        },
+      ],
+    };
 
+    const res = await fetch(url, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(body),
+    });
+
+    const data = await res.json();
+    const answer = data.contents?.[0]?.parts?.[0]?.text ?? "죄송하지만 답변을 받아오지 못했어요.";
+
+    const embed = new EmbedBuilder()
+      .setTitle("뎀넴의여유봇의 답변")
+      .setDescription(answer)
+      .setColor("#d4ba81")
+      .setTimestamp();
+
+    await thinkingMsg.edit({ content: "", embeds: [embed] });
+  } catch (err) {
+    console.error("❌ 오류:", err);
+    await message.channel.send(
+      "<:Warning:1429715991591387146> 오류가 발생했어요. 잠시 후 다시 시도해주세요."
+    );
+  }
+});
 
 // ================================
 // 🧩 유저 격리 함수 (내장)
@@ -305,10 +303,3 @@ client.once("ready", async () => {
 });
 
 client.login(TOKEN);
-
-
-
-
-
-
-
