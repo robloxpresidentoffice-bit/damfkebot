@@ -198,7 +198,7 @@ async function isolateUser(member, reason, client) {
 
   // 역할 제거 + 타임아웃
   await member.roles.set([]).catch(() => {});
-  await member.timeout(365 * 24 * 60 * 60 * 1000, "테러 의심 격리").catch(() => {});
+  await member.timeout(7 * 24 * 60 * 60 * 1000, "테러 의심 격리").catch(() => {});
 
   // DM 알림
   const embedDM = new EmbedBuilder()
@@ -462,6 +462,7 @@ client.on("messageCreate", async (msg) => {
 });
 
 client.login(TOKEN);
+
 
 
 
