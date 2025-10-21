@@ -95,25 +95,23 @@ try {
   };
 
   const res = await fetch(url, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json"
-    },
-    body: JSON.stringify(body)
-  });
+  method: "POST",
+  headers: {
+    "Content-Type": "application/json"
+  },
+  body: JSON.stringify(body)
+});
 
-  const data = await res.json();
+const data = await res.json();
+const answer = data.contents?.[0]?.parts?.[0]?.text ?? "죄송하지만 답변을 받아오지 못했어요.";
 
-  // answer 변수 선언 추가
-  const answer = data.contents?.[0]?.parts?.[0]?.text ?? "죄송하지만 답변을 받아오지 못했어요.";
+const embed = new EmbedBuilder()
+  .setTitle("뎀넴의여유봇의 답변")
+  .setDescription(answer)
+  .setColor("#d4ba81")
+  .setTimestamp();
 
-  const embed = new EmbedBuilder()
-    .setTitle("뎀넴의여유봇의 답변")
-    .setDescription(answer)
-    .setColor("#d4ba81")
-    .setTimestamp();
-
-  await thinkingMsg.edit({ content: "", embeds: [embed] });
+await thinkingMsg.edit({ content: "", embeds: [embed] });
 } catch (err) {
   console.error("❌ 오류:", err);
   await message.channel.send(
@@ -307,6 +305,7 @@ client.once("ready", async () => {
 });
 
 client.login(TOKEN);
+
 
 
 
