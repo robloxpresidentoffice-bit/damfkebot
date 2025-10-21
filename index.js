@@ -96,7 +96,7 @@ client.on("messageCreate", async (message) => {
     const res = await fetch(url, {
       method: "POST",
       headers: {
-        "Content‑Type": "application/json",
+        "Content-Type": "application/json",
       },
       body: JSON.stringify(body),
     });
@@ -298,3 +298,4 @@ client.once("clientReady", async () => {
 });
 
 client.login(TOKEN);
+
