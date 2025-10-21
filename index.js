@@ -69,14 +69,55 @@ client.on("messageCreate", async (message) => {
     return message.channel.send(`✅ 이제 "${topic}"에 대해 학습중이에요!`);
   }
 
-  // ✨ Gemini 대화 응답
-  const question = content.trim();
-  if (!question) {
-    return message.channel.send("질문 내용이랑 같이 보내줄래? :D");
+// =======================================
+// 💬 Gemini 대화 & 학습 기능 (멘션 기반 + 자동 복귀)
+// =======================================
+
+// 🕒 최근 활동 시간 추적용
+let lastActivityTimer = null;
+
+client.on("messageCreate", async (message) => {
+  if (message.author.bot) return;
+  if (!message.mentions.has(client.user)) return; // 봇 멘션 없으면 무시
+
+  const content = message.content.replace(`<@${client.user.id}>`, "").trim();
+  if (!content) {
+    return message.channel.send("질문 내용과 함께 적어줘 😊");
   }
 
+  // ✅ “학습해” 명령 처리 (플레이중 업데이트)
+  if (content.endsWith("학습해")) {
+    const topic = content.replace("학습해", "").trim();
+    if (!topic) {
+      return message.channel.send("무엇을 학습할지 알려줘 😊");
+    }
+
+    // 상태 업데이트
+    await client.user.setPresence({
+      activities: [{ name: `${topic} 학습중`, type: ActivityType.Playing }],
+      status: "online",
+    });
+
+    // ⏳ 10분 타이머 리셋
+    if (lastActivityTimer) clearTimeout(lastActivityTimer);
+    lastActivityTimer = setTimeout(async () => {
+      await client.user.setPresence({
+        activities: [{ name: "너를 기다리는중...", type: ActivityType.Playing }],
+        status: "online",
+      });
+      console.log("🕒 활동 없음 → 상태 자동 복귀 완료");
+    }, 10 * 60 * 1000); // 10분 (600,000ms)
+
+    // 메시지 보내지 않게 코드 제거됨
+    return;
+  }
+
+  // ✅ 일반 대화 (Gemini)
+  await message.channel.sendTyping();
+
+  // 로딩 메시지 전송
   const thinkingMsg = await message.channel.send(
-    "<a:Loading:1429705917267705937> 더 좋은 답변 생각중..."
+    "<a:Loading:1429705917267705937> 더 나은 답변 생각 중..."
   );
 
   try {
@@ -86,7 +127,12 @@ client.on("messageCreate", async (message) => {
         {
           parts: [
             {
-              text: `너는 나의 친한 친구야. 항상 따뜻하고 자연스러운 한국어로 이야기하듯 대화해줘.\n\n내가 물어볼게: ${question}`,
+              text: `
+너는 나의 친한 친구야. 😊
+항상 따뜻하고 자연스러운 한국어로, 친구처럼 대화하듯 답변해줘.
+지나치게 격식 차리지 말고, 유머나 감정도 자연스럽게 표현해도 돼.
+내가 궁금한 건 이거야: ${content}
+              `.trim(),
             },
           ],
         },
@@ -94,27 +140,52 @@ client.on("messageCreate", async (message) => {
     };
 
     const res = await fetch(url, {
-  method: "POST",
-  headers: {
-    "Content-Type": "application/json",  // ← 여기 수정
-  },
-  body: JSON.stringify(body),
-});
-
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
 
     const data = await res.json();
-    const answer = data.contents?.[0]?.parts?.[0]?.text ?? "죄송하지만 답변을 받아오지 못했어요.";
 
+    if (!res.ok) {
+      console.error("❌ Gemini API 오류:", JSON.stringify(data, null, 2));
+      return thinkingMsg.edit(
+        `<:Warning:1429715991591387146> API 오류: ${
+          data.error?.message || "알 수 없는 오류입니다."
+        }`
+      );
+    }
+
+    // ✅ 응답 텍스트 추출
+    const answer =
+      data.candidates?.[0]?.content?.parts?.[0]?.text?.trim() ||
+      "⚠️ 답변을 생성할 수 없어요.";
+
+    // ✅ 임베드로 표시
     const embed = new EmbedBuilder()
-      .setTitle("뎀넴의여유봇의 답변")
+      .setAuthor({
+        name: message.author.username,
+        iconURL: message.author.displayAvatarURL(),
+      })
+      .setTitle("💬 뎀넴의여유봇의 답변")
       .setDescription(answer)
       .setColor("#d4ba81")
       .setTimestamp();
 
     await thinkingMsg.edit({ content: "", embeds: [embed] });
+
+    // 🔄 활동 감지 → 타이머 리셋
+    if (lastActivityTimer) clearTimeout(lastActivityTimer);
+    lastActivityTimer = setTimeout(async () => {
+      await client.user.setPresence({
+        activities: [{ name: "너를 기다리는중...", type: ActivityType.Playing }],
+        status: "online",
+      });
+      console.log("🕒 활동 없음 → 상태 자동 복귀 완료");
+    }, 10 * 60 * 1000);
   } catch (err) {
-    console.error("❌ 오류:", err);
-    await message.channel.send(
+    console.error("❌ Gemini 처리 오류:", err);
+    await thinkingMsg.edit(
       "<:Warning:1429715991591387146> 오류가 발생했어요. 잠시 후 다시 시도해주세요."
     );
   }
@@ -299,5 +370,6 @@ client.once("clientReady", async () => {
 });
 
 client.login(TOKEN);
+
 
 
