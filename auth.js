@@ -516,3 +516,4 @@ if (interaction.isButton() && interaction.customId.startsWith("check_")) {
     console.error("⚠️ 관리자 DM 명령 오류:", err);
   }
 });
+}
