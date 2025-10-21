@@ -293,7 +293,7 @@ client.on("interactionCreate", async (interaction) => {
 // ================================
 // 🚀 인증, 관리자 명령어, 로그인
 // ================================
-client.once("ready", async () => {
+client.once("clientReady", async () => {
   console.log(`🤖 ${client.user.tag} 로그인 완료!`);
   await setupAuth(client);
   client.user.setPresence({
@@ -303,3 +303,4 @@ client.once("ready", async () => {
 });
 
 client.login(TOKEN);
+
