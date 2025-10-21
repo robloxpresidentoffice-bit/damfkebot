@@ -55,7 +55,7 @@ client.on("messageCreate", async (message) => {
 
   const question = message.content.replace(`<@${client.user.id}>`, "").trim();
   if (!question) {
-    return message.channel.send("질문 내용도 함께 보내줘 😊");
+    return message.channel.send("질문 내용도 함께 보내줘 :D");
   }
 
   // “더 좋은 답변 생각중...” 메시지
@@ -103,7 +103,7 @@ client.on("messageCreate", async (message) => {
         name: message.author.username,
         iconURL: message.author.displayAvatarURL(),
       })
-      .setTitle("💬 뎀넴의여유봇의 답변")
+      .setTitle("뎀넴의여유봇의 답변")
       .setDescription(answer)
       .setColor(0x00a67e)
       .setTimestamp();
@@ -301,3 +301,4 @@ client.once("ready", async () => {
 });
 
 client.login(TOKEN);
+
