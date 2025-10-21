@@ -44,21 +44,36 @@ const client = new Client({
   partials: [Partials.Channel, Partials.Message, Partials.GuildMember],
 });
 
-// ================================
-// ✨ Gemini 응답 기능 추가
-// ================================
 client.on("messageCreate", async (message) => {
   if (message.author.bot) return;
 
-  // 봇 멘션 여부
+  // 봇 멘션을 포함하지 않으면 무시
   if (!message.mentions.has(client.user)) return;
 
-  const question = message.content.replace(`<@${client.user.id}>`, "").trim();
-  if (!question) {
-    return message.channel.send("질문 내용도 함께 보내줘 :D");
+  const content = message.content.replace(`<@${client.user.id}>`, "").trim();
+
+  // “학습해” 명령 처리
+  if (content.endsWith("학습해")) {
+    const topic = content.replace("학습해", "").trim();
+    if (!topic) {
+      return message.channel.send("무엇을 학습할지 알려줘 😊");
+    }
+
+    // 상태 업데이트
+    await client.user.setPresence({
+      activities: [{ name: `${topic} 학습중`, type: 0 }], // type 0 = Playing
+      status: "online",
+    });
+
+    return message.channel.send(`✅ 이제 "${topic}"에 대해 학습중이에요!`);
   }
 
-  // “더 좋은 답변 생각중...” 메시지
+  // ✨ Gemini 대화 응답 (기존 코드)
+  const question = content.trim();
+  if (!question) {
+    return message.channel.send("질문 내용이랑 같이 보내줄래 😊");
+  }
+
   const thinkingMsg = await message.channel.send(
     "<a:Loading:1429705917267705937> 더 좋은 답변 생각중..."
   );
@@ -79,31 +94,7 @@ client.on("messageCreate", async (message) => {
 
     const res = await fetch(url, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(body),
-    });
-
-    const data = await res.json();
-
-    if (!res.ok) {
-      console.error("Gemini API 오류:", JSON.stringify(data, null, 2));
-      return thinkingMsg.edit(
-        `<:Warning:1429715991591387146> API 오류: ${
-          data.error?.message || "알 수 없는 오류입니다."
-        }`
-      );
-    }
-
-    const answer =
-      data.candidates?.[0]?.content?.parts?.[0]?.text ||
-      "<:Warning:1429715991591387146> 답변을 생성할 수 없습니다.";
-
-    const embed = new EmbedBuilder()
-      .setAuthor({
-        name: message.author.username,
-        iconURL: message.author.displayAvatarURL(),
-      })
-      .setTitle("뎀넴의여유봇의 답변")
+      head뎀넴의여유봇의 답변")
       .setDescription(answer)
       .setColor("#d4ba81")
       .setTimestamp();
@@ -116,6 +107,7 @@ client.on("messageCreate", async (message) => {
     );
   }
 });
+
 
 // ================================
 // 🧩 유저 격리 함수 (내장)
@@ -301,5 +293,6 @@ client.once("ready", async () => {
 });
 
 client.login(TOKEN);
+
 
 
