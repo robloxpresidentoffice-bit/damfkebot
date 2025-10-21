@@ -152,7 +152,7 @@ client.on("messageCreate", async (message) => {
     // ✅ 응답 텍스트 추출
     const answer =
       data.candidates?.[0]?.content?.parts?.[0]?.text?.trim() ||
-      "⚠️ 답변을 생성할 수 없어요.";
+      "<:Warning:1429715991591387146> 답변을 생성할 수 없어요.";
 
     // ✅ 임베드로 표시
     const embed = new EmbedBuilder()
@@ -160,7 +160,7 @@ client.on("messageCreate", async (message) => {
         name: message.author.username,
         iconURL: message.author.displayAvatarURL(),
       })
-      .setTitle("💬 뎀넴의여유봇의 답변")
+      .setTitle("뎀넴의여유봇의 답변")
       .setDescription(answer)
       .setColor("#d4ba81")
       .setTimestamp();
@@ -331,11 +331,11 @@ client.on("interactionCreate", async (interaction) => {
   const userId = interaction.customId.split("_")[1];
   const member = await interaction.guild.members.fetch(interaction.user.id);
   if (!member.permissions.has(PermissionsBitField.Flags.Administrator)) {
-    return interaction.reply({ content: "🚫 관리자만 격리 해제 가능.", ephemeral: true });
+    return interaction.reply({ content: "<:Nocheck:1429716350892507137> 관리자만 격리 해제 가능.", ephemeral: true });
   }
 
   const target = await interaction.guild.members.fetch(userId).catch(() => null);
-  if (!target) return interaction.reply({ content: "❌ 대상을 찾을 수 없습니다.", ephemeral: true });
+  if (!target) return interaction.reply({ content: "대상을 찾을 수 없습니다.", ephemeral: true });
 
   await target.timeout(null).catch(() => {});
   const roles = savedRoles[userId] || [];
@@ -345,7 +345,7 @@ client.on("interactionCreate", async (interaction) => {
   }
 
   await interaction.reply({
-    embeds: [new EmbedBuilder().setColor("#4d9802").setTitle("✅ 격리가 해제되었습니다.")],
+    embeds: [new EmbedBuilder().setColor("#4d9802").setTitle("<:Finger:1429722343424659568> 격리가 해제되었습니다.")],
     ephemeral: true,
   });
 });
@@ -456,11 +456,12 @@ client.on("messageCreate", async (msg) => {
     }
   } catch (err) {
     console.error("⚠️ 관리자 명령 오류:", err);
-    msg.channel.send("⚠️ 명령 실행 중 오류가 발생했습니다.");
+    msg.channel.send("<:Warning:1429715991591387146> 명령 실행 중 오류가 발생했습니다.");
   }
 });
 
 client.login(TOKEN);
+
 
 
 
