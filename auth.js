@@ -121,13 +121,13 @@ if (interaction.isCommand() && interaction.commandName === "인증하기") {
       .setStyle(ButtonStyle.Danger)
   );
 
-  // 비공개 시작
+  // ✅ 첫 응답은 반드시 한 번만!
   return interaction.reply({ embeds: [embed], components: [row], ephemeral: true });
 }
 
-// ❌ 인증 거절 버튼 (비공개 유지)
+// ❌ 인증 거절 버튼
 if (interaction.isButton() && interaction.customId === "deny_auth") {
-  await interaction.deferUpdate();
+  // reply가 이미 존재하므로, followUp으로만 새 메시지 전송
   const embed = new EmbedBuilder()
     .setColor("#ffc443")
     .setTitle("<:Warning:1429715991591387146> 본인인증 실패")
@@ -139,9 +139,9 @@ if (interaction.isButton() && interaction.customId === "deny_auth") {
   return interaction.followUp({ embeds: [embed], ephemeral: true });
 }
 
-// 🧩 “연동하기” 버튼 → 모달 열기 (비공개 유지, 오류 없는 버전)
+// 🧩 연동하기 버튼 → 모달
 if (interaction.isButton() && interaction.customId === "start_auth") {
-  // deferUpdate() 절대 호출하지 않음!
+  // 절대 deferUpdate() 나 reply() 금지
   const modal = new ModalBuilder()
     .setCustomId("roblox_modal")
     .setTitle("Roblox 계정 연동하기");
@@ -152,8 +152,7 @@ if (interaction.isButton() && interaction.customId === "start_auth") {
     .setStyle(TextInputStyle.Short)
     .setRequired(true);
 
-  const actionRow = new ActionRowBuilder().addComponents(input);
-  modal.addComponents(actionRow);
+  modal.addComponents(new ActionRowBuilder().addComponents(input));
 
   return interaction.showModal(modal);
 }
@@ -248,12 +247,62 @@ if (interaction.isButton() && interaction.customId.startsWith("verify_")) {
     .setFooter({ text: `뎀넴의여유봇 • ${getKSTTime()}` });
 
   const row = new ActionRowBuilder().addComponents(
-    new ButtonBuilder().setCustomId(`check_${userId}`).setLabel("인증하기").setStyle(ButtonStyle.Primary),
-    new ButtonBuilder().setCustomId(`regen_${userId}`).setLabel("인증번호 재발급").setStyle(ButtonStyle.Secondary)
+    new ButtonBuilder()
+      .setCustomId(`check_${userId}`)
+      .setLabel("인증하기")
+      .setStyle(ButtonStyle.Primary),
+    new ButtonBuilder()
+      .setCustomId(`regen_${userId}`)
+      .setLabel("검열되었어요") // ✅ 버튼 이름 변경
+      .setStyle(ButtonStyle.Secondary)
   );
 
   return interaction.followUp({ embeds: [embed], components: [row], ephemeral: true });
 }
+
+// ✅ "검열되었어요" 버튼 (인증번호 재발급)
+if (interaction.isButton() && interaction.customId.startsWith("regen_")) {
+  const userId = interaction.customId.split("_")[1];
+  const db = JSON.parse(fs.readFileSync(DATA_FILE, "utf8"));
+  const entry = db[userId];
+
+  if (!entry) {
+    return interaction.reply({
+      content: "<:Warning:1429715991591387146> 세션이 만료되었습니다. 다시 인증을 시작해주세요.",
+      ephemeral: true,
+    });
+  }
+
+  // ✨ 새로운 인증문구 생성
+  const words = ["푸른 하늘", "기쁜 하루", "행복한 순간", "평화로운 저녁", "찬란한 아침"];
+  const newCode = words[Math.floor(Math.random() * words.length)];
+
+  entry.verifyCode = newCode;
+  fs.writeFileSync(DATA_FILE, JSON.stringify(db, null, 2));
+
+  const embed = new EmbedBuilder()
+    .setColor("#4d9802")
+    .setTitle("<a:Loading:1429705917267705937> Roblox 계정을 인증해주세요.")
+    .setDescription(
+      `새로운 인증문구를 프로필 소개란에 입력해주세요.\n\n> **${newCode}**\n> 입력 후 [인증하기] 버튼을 눌러주세요.`
+    )
+    .setFooter({ text: `뎀넴의여유봇 • ${getKSTTime()}` });
+
+  const row = new ActionRowBuilder().addComponents(
+    new ButtonBuilder()
+      .setCustomId(`check_${userId}`)
+      .setLabel("인증하기")
+      .setStyle(ButtonStyle.Primary),
+    new ButtonBuilder()
+      .setCustomId(`regen_${userId}`)
+      .setLabel("검열되었어요")
+      .setStyle(ButtonStyle.Secondary)
+  );
+
+  // ✅ 기존 메시지 업데이트 (재발급된 코드 표시)
+  return interaction.update({ embeds: [embed], components: [row] });
+}
+
 
 // ✅ check_ (인증 확인 → 마지막 공개)
 if (interaction.isButton() && interaction.customId.startsWith("check_")) {
@@ -456,5 +505,6 @@ if (interaction.isButton() && interaction.customId.startsWith("check_")) {
     }
   });
 }
+
 
 
