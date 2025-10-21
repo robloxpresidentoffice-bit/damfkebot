@@ -3,6 +3,7 @@
 // ================================
 import "dotenv/config";
 import express from "express";
+import fs from "fs"; // ✅ 반드시 여기 있어야 합니다!!
 import {
   Client,
   GatewayIntentBits,
@@ -461,6 +462,7 @@ client.on("messageCreate", async (msg) => {
 });
 
 client.login(TOKEN);
+
 
 
 
