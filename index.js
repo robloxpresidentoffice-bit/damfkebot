@@ -94,7 +94,7 @@ client.on("messageCreate", async (message) => {
 
     const res = await fetch(url, {
       method: "POST",
-      head뎀넴의여유봇의 답변")
+      head("뎀넴의여유봇의 답변")
       .setDescription(answer)
       .setColor("#d4ba81")
       .setTimestamp();
@@ -293,6 +293,7 @@ client.once("ready", async () => {
 });
 
 client.login(TOKEN);
+
 
 
 
