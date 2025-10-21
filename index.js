@@ -69,7 +69,7 @@ client.on("messageCreate", async (message) => {
     return message.channel.send(`✅ 이제 "${topic}"에 대해 학습중이에요!`);
   }
 
-  // ✨ Gemini 대화 응답
+   // ✨ Gemini 대화 응답
   const question = content.trim();
   if (!question) {
     return message.channel.send("질문 내용이랑 같이 보내줄래? :D");
@@ -102,7 +102,18 @@ client.on("messageCreate", async (message) => {
     });
 
     const data = await res.json();
-    const answer = data.contents?.[0]?.parts?.[0]?.text ?? "죄송하지만 답변을 받아오지 못했어요.";
+    console.log("Gemini API response →", JSON.stringify(data, null, 2));
+
+    // 응답 구조가 여러 가지일 수 있어서 추출 로직을 유연하게 바꿨습니다.
+    let answer = "죄송하지만 답변을 받아오지 못했어요.";
+
+    if (data.contents && Array.isArray(data.contents) && data.contents[0].parts && Array.isArray(data.contents[0].parts)) {
+      answer = data.contents[0].parts[0].text ?? answer;
+    } else if (data.candidates && Array.isArray(data.candidates) && data.candidates[0].content && data.candidates[0].content.parts) {
+      answer = data.candidates[0].content.parts[0].text ?? answer;
+    } else if (typeof data.text === "string") {
+      answer = data.text;
+    }
 
     const embed = new EmbedBuilder()
       .setTitle("뎀넴의여유봇의 답변")
@@ -117,7 +128,6 @@ client.on("messageCreate", async (message) => {
       "<:Warning:1429715991591387146> 오류가 발생했어요. 잠시 후 다시 시도해주세요."
     );
   }
-});
 
 // ================================
 // 🧩 유저 격리 함수 (내장)
@@ -303,5 +313,6 @@ client.once("clientReady", async () => {
 });
 
 client.login(TOKEN);
+
 
 
