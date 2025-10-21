@@ -144,7 +144,6 @@ client.login(DISCORD_TOKEN);
 
 // ====== 추가 감지 시스템 (index.js 2/2) ======
 import { isolateUser } from "./isolation.js"; // 분리 가능, 또는 위 index.js 내부에 그대로 포함 가능
-import { setupAuth } from "./auth.js";
 
 const activityLog = {};
 const savedRoles = {};
@@ -266,3 +265,4 @@ client.on("interactionCreate", async (interaction) => {
 
   await interaction.reply({ embeds: [embed], ephemeral: true });
 });
+
