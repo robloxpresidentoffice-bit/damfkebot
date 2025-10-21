@@ -72,7 +72,7 @@ client.on("messageCreate", async (message) => {
   // ✨ Gemini 대화 응답
   const question = content.trim();
   if (!question) {
-    return message.channel.send("질문 내용이랑 같이 보내줄래 😊");
+    return message.channel.send("질문 내용이랑 같이 보내줄래? :D");
   }
 
   const thinkingMsg = await message.channel.send(
@@ -303,4 +303,5 @@ client.once("clientReady", async () => {
 });
 
 client.login(TOKEN);
+
 
