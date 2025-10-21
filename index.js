@@ -43,6 +43,7 @@ const client = new Client({
     GatewayIntentBits.DirectMessages,
   ],
   partials: [Partials.Channel, Partials.Message, Partials.GuildMember],
+  allowedMentions: { parse: ["users", "roles"] }, // @everyone, @here 기본 무시 설정
 });
 
 // =======================================
@@ -52,13 +53,23 @@ const client = new Client({
 // 🕒 최근 활동 시간 추적용
 let lastActivityTimer = null;
 
+const PLAY_COMMAND_USER_ID = "1410269476011770059";
+
 client.on("messageCreate", async (message) => {
   if (message.author.bot) return;
   if (!message.mentions.has(client.user)) return; // 봇 멘션 없으면 무시
 
-  const content = message.content.replace(`<@${client.user.id}>`, "").trim();
+  const contentOriginal = message.content.replace(`<@${client.user.id}>`, "").trim();
+  const content = contentOriginal;
+
   if (!content) {
-    return message.channel.send("질문 내용과 함께 적어줘 :D");
+    return message.channel.send("질문 내용과 함께 적어줘 :)");
+  }
+
+  // — @everyone / @here 포함 메시지 무시
+  if (message.mentions.everyone) {
+    // 그냥 아무 응답도 하지 않고 리턴
+    return;
   }
 
   // ✅ “학습해” 명령 처리 (플레이중 업데이트)
@@ -68,23 +79,30 @@ client.on("messageCreate", async (message) => {
       return message.channel.send("무엇을 학습할지 알려줘");
     }
 
-    // 상태 업데이트
-    await client.user.setPresence({
-      activities: [{ name: `${topic} 학습중`, type: ActivityType.Playing }],
-      status: "online",
-    });
-
-    // ⏳ 10분 타이머 리셋
-    if (lastActivityTimer) clearTimeout(lastActivityTimer);
-    lastActivityTimer = setTimeout(async () => {
+    // ▶️ 권한 체크: 지정된 사용자만 실행 가능
+    if (message.author.id !== PLAY_COMMAND_USER_ID) {
+      // 권한 없는 사용자의 경우 → 그냥 일반 대화 흐름으로 넘김
+      // 즉, 여기서 리턴하지 않고 아래의 일반 대화 처리로 이행
+    } else {
+      // 상태 업데이트
       await client.user.setPresence({
-        activities: [{ name: "너를 기다리는중...", type: ActivityType.Playing }],
+        activities: [{ name: `${topic} 학습중`, type: ActivityType.Playing }],
         status: "online",
       });
-      console.log("🕒 활동 없음 → 상태 자동 복귀 완료");
-    }, 10 * 60 * 1000); // 10분 (600,000ms)
 
-    return message.channel.send(`이제 "${topic}"에 대해 학습중이에요!`);
+      // ⏳ 10분 타이머 리셋
+      if (lastActivityTimer) clearTimeout(lastActivityTimer);
+      lastActivityTimer = setTimeout(async () => {
+        await client.user.setPresence({
+          activities: [{ name: "너를 기다리는중...", type: ActivityType.Playing }],
+          status: "online",
+        });
+        console.log("🕒 활동 없음 → 상태 자동 복귀 완료");
+      }, 10 * 60 * 1000); // 10분 (600,000ms)
+
+      // 메시지 보내지 않음 (요청하신 대로)
+      return;
+    }
   }
 
   // ✅ 일반 대화 (Gemini)
@@ -142,7 +160,7 @@ client.on("messageCreate", async (message) => {
         name: message.author.username,
         iconURL: message.author.displayAvatarURL(),
       })
-      .setTitle("뎀넴의여유봇의 답변")
+      .setTitle("💬 뎀넴의여유봇의 답변")
       .setDescription(answer)
       .setColor("#d4ba81")
       .setTimestamp();
@@ -345,6 +363,7 @@ client.once("clientReady", async () => {
 });
 
 client.login(TOKEN);
+
 
 
 
