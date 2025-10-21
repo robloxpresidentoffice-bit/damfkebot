@@ -94,12 +94,13 @@ client.on("messageCreate", async (message) => {
     };
 
     const res = await fetch(url, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify(body),
-    });
+  method: "POST",
+  headers: {
+    "Content-Type": "application/json",  // ← 여기 수정
+  },
+  body: JSON.stringify(body),
+});
+
 
     const data = await res.json();
     const answer = data.contents?.[0]?.parts?.[0]?.text ?? "죄송하지만 답변을 받아오지 못했어요.";
@@ -298,4 +299,5 @@ client.once("clientReady", async () => {
 });
 
 client.login(TOKEN);
+
 
