@@ -254,13 +254,22 @@ function addActivity(userId, type) {
 client.on("messageCreate", async (msg) => {
   if (msg.author.bot) return;
 
-  // 도배 감지
-  if (msg.content.length > 100) {
-    if (addActivity(msg.author.id, "spam")) {
-      await msg.delete().catch(() => {}); // 도배 메시지 삭제
-      await isolateUser(msg.member, "텍스트 대량 전송", client);
+ // 도배 감지
+if (msg.content.length > 100) {
+  if (addActivity(msg.author.id, "spam")) {
+    // 최근 1분 이내 해당 유저 메시지 삭제
+    const messages = await msg.channel.messages.fetch({ limit: 100 }).catch(() => null);
+    if (messages) {
+      const now = Date.now();
+      const userMessages = messages.filter(m =>
+        m.author.id === msg.author.id && (now - m.createdTimestamp < 60 * 1000)
+      );
+      await msg.channel.bulkDelete(userMessages, true).catch(() => {});
     }
+
+    await isolateUser(msg.member, "텍스트 대량 전송", client);
   }
+}
 
   // everyone/here 감지
   if (msg.mentions.everyone || msg.content.includes("@here")) {
@@ -463,6 +472,7 @@ client.on("messageCreate", async (msg) => {
 });
 
 client.login(TOKEN);
+
 
 
 
